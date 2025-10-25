@@ -1,0 +1,17 @@
+{
+    "name": "lilsim",
+    "version": "0.1.0",
+    "dependencies": [
+      "glfw3",
+      {
+        "name": "imgui",
+        "features": ["glfw-binding", "opengl3-binding"]
+      },
+      "eigen3",
+      "spdlog",
+      "protobuf",
+      "zeromq",
+      "cppzmq"
+    ]
+  }
+  
