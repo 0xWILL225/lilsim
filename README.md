@@ -4,15 +4,10 @@ A simple 2D simulator for Formula Student Driverless.
 ## Quick Start
 
 ### Prerequisites
-1. **Download wgpu-native** (graphics library):
-   - Visit: https://github.com/gfx-rs/wgpu-native/releases
-   - Download the appropriate release for your platform (v0.19.4.1 or later)
-   - Extract to `third_party/wgpu-native/` so you have:
-     - `third_party/wgpu-native/include/`
-     - `third_party/wgpu-native/lib/`
-
-2. **Install vcpkg dependencies** (handled automatically by CMake):
-   - `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`
+- CMake 3.20+
+- C++20 compiler (clang/gcc/msvc)
+- vcpkg dependencies (automatically handled): `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`
+- wgpu-native (automatically downloaded on first build)
 
 ### Build & Run
 ```bash

@@ -6,6 +6,36 @@ project(lilsim
   LANGUAGES CXX
 )
 
+# ---- Fetch wgpu-native if not present ----
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/third_party/wgpu-native/lib")
+  message(STATUS "Downloading wgpu-native...")
+  include(FetchContent)
+  
+  # Detect platform
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(WGPU_URL "https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-linux-x86_64-release.zip")
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    if(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+      set(WGPU_URL "https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-macos-aarch64-release.zip")
+    else()
+      set(WGPU_URL "https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-macos-x86_64-release.zip")
+    endif()
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(WGPU_URL "https://github.com/gfx-rs/wgpu-native/releases/download/v27.0.2.0/wgpu-windows-x86_64-release.zip")
+  else()
+    message(FATAL_ERROR "Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+  endif()
+  
+  FetchContent_Declare(
+    wgpu_native
+    URL ${WGPU_URL}
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_DIR ${CMAKE_SOURCE_DIR}/third_party/wgpu-native
+  )
+  FetchContent_MakeAvailable(wgpu_native)
+  message(STATUS "wgpu-native downloaded successfully")
+endif()
+
 # ---- Options ----
 option(BUILD_TESTS "Build tests" OFF)
 option(ENABLE_CLANG_TIDY "Run clang-tidy during builds" ON)
