@@ -34,8 +34,8 @@ namespace viz {
 class Application {
 public:
   Application(scene::SceneDB& db, sim::Simulator& sim)
-    : sceneDB(db)
-    , simulator(sim) {
+    : m_sceneDB(db)
+    , m_simulator(sim) {
   }
 
   bool initialize();
@@ -44,29 +44,45 @@ public:
   bool isRunning();
   void onResize(int newWidth, int newHeight);
 
-  // Camera state (public for callback access)
-  float zoom = 50.0f; // pixels per meter
+  // Camera state (public for callback/input access)
+  enum class CameraMode { Free, CarFollow };
+  CameraMode cameraMode = CameraMode::CarFollow;
+
+  // Car-follow camera state
+  float followCarZoom = 50.0f; // pixels per meter
+
+  // Free camera state
+  float freeCameraX = 0.0f;
+  float freeCameraY = 0.0f;
+  float freeCameraZoom = 50.0f;
+
+  // Panel state
+  bool panelCollapsed = false;
+  float panelWidth = 300.0f;
+  bool panelResizing = false;
 
 private:
   // References to scene and simulator
-  scene::SceneDB& sceneDB;
-  sim::Simulator& simulator;
+  scene::SceneDB& m_sceneDB;
+  sim::Simulator& m_simulator;
 
-  GLFWwindow* window = nullptr;
-  int width = 800;
-  int height = 600;
+  GLFWwindow* m_window = nullptr;
+  int m_width = 800;
+  int m_height = 600;
 
-  WGPUInstance instance = nullptr;
-  WGPUSurface surface = nullptr;
-  WGPUAdapter adapter = nullptr;
-  WGPUDevice device = nullptr;
-  WGPUQueue queue = nullptr;
-  WGPUTextureFormat surfaceFormat = WGPUTextureFormat_BGRA8Unorm;
+  WGPUInstance m_instance = nullptr;
+  WGPUSurface m_surface = nullptr;
+  WGPUAdapter m_adapter = nullptr;
+  WGPUDevice m_device = nullptr;
+  WGPUQueue m_queue = nullptr;
+  WGPUTextureFormat m_surfaceFormat = WGPUTextureFormat_BGRA8Unorm;
 
-  float clearColor[4] = {0.45f, 0.55f, 0.60f, 1.00f};
+  float m_clearColor[4] = {0.45f, 0.55f, 0.60f, 1.00f};
 
   // Input state
-  bool keyW = false, keyA = false, keyS = false, keyD = false;
+  bool m_keyW = false, m_keyA = false, m_keyS = false, m_keyD = false;
+  bool m_mouseLeftPressed = false;
+  float m_lastMouseX = 0.0f, m_lastMouseY = 0.0f;
 
   bool initGLFW();
   bool initWebGPU();

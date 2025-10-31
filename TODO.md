@@ -1,77 +1,39 @@
-# Rough TODO
-
-- **Repo scaffold**
-    -  Create folders: `app/ sim/ scene/ viz/ common/ third_party/`
-    -  Add `.clang-format`, `.clang-tidy`, `.gitignore`
-    -  Init CMake project with options: `BUILD_TESTS`, `BUILD_RELEASE_AS_DEFAULT`
--  **Deps via vcpkg (manifest mode)**
-    -  Add `vcpkg.json` with deps: `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`    
-    -  Configure CMake using vcpkg toolchain
-    -  **Vendor** `wgpu-native` (git submodule under `third_party/wgpu-native`) and add_subdirectory in CMake
--  **Common math**
-    -  Implement `common/SE2.hpp` — light wrapper around `Eigen::Isometry2d`
-        -  Constructors: from `(x, y, yaw)` and from `Eigen`
-        -  Helpers: `compose`, `inverse`, `x()`, `y()`, `yaw()`, `fromXYYaw`, `toMatrix3`, `interp(a,b,alpha)`
-        -  Unit tests for conversions (if testing enabled)
--  **App bootstrap (pixels on screen)**
-    -  Create window with **GLFW**
-    -  Create WebGPU instance/surface/swapchain with **wgpu-native**
-    -  Init **Dear ImGui** (`imgui_impl_glfw` + `imgui_impl_wgpu`)
-    -  Render clear color + ImGui demo window → present
--  **Scene (double-buffered)**
-    -  `scene/Scene.hpp` with:
-        -  `struct CarState { SE2 pose; double v; double yaw_rate; };`
-        -  `struct Scene { CarState car; /* cones later */ };`
-    -  `scene/SceneDB.hpp` double buffer:
-        -  `publish(const Scene&)` (swap back→front atomically)
-        -  `snapshot() const` (read front atomically)
-        -  `std::atomic<uint64_t> tick` counter
--  **Simulator thread**
-    -  `sim/Simulator.hpp/.cpp` with fixed `dt` loop (e.g., 1/500 s)
-    -  Controls struct `{ double steer; double ax; }` (atomic/latest)
-    -  Start with **kinematic bicycle**:
-        -  Integrate `(x,y,yaw,v)` with Euler; params `L`, limits on `steer`, `v`
-    -  Write to `SceneDB.publish()` each tick; bump `tick`
--  **Input → control mapping**
-    -  In main/UI thread, map GLFW keys:
-        -  `A/D` steer (rate with clamp)
-        -  `W/S` accel/brake (`ax`)
-    -  Add ImGui sliders for steer, accel, and dt multiplier
--  **Viz: draw simple 2D world**
-    -  Grid background in world frame
-    -  Car as rectangle + heading triad using `SceneDB.snapshot()`
-    -  Show HUD: `tick`, `sim_time`, `v`, `yaw`
+- **Camera**
+	- Add free camera mode that starts centered in the world frame. Zoom in/out and panning possible.
+	- Switch between free camera and car-following camera with a quick keyboard shortcut, let's say spacebar for now.
+- **Transform tree (lean)**
+    -  There's a global "world" frame, and one frame for each simulated object. In our case it should be fine to just have a "world" frame and a "car" frame and nothing else. Let's keep it simple.
+    - Importantly, whether the camera is focusing on the car or world frame, all markers and simulated objects must be correctly transformed
+    - Ingested markers must specify world or car frame. So markers in car frame will follow the car and be static in the world frame
 -  **Sim run modes**
     -  States: `Paused | Running | StepPending`
-    -  Buttons: **Run/Pause**, **Step(1)**, **Step(N)** (input N)
+    -  Buttons: **Run/Pause**, **Step(1)**, **Step(N)** (input N in some textbox)
     -  Implement deterministic step: exactly one `dt` then pause
--  **Determinism hooks**
-    -  Fixed time base (no wall-clock in physics)
-    -  RNG seeded by `(seed ^ tick)` (even if unused yet)
-    -  Per-tick state checksum (xxhash) for debugging
--  **Logging**
-    -  Ring buffer of `(tick, control, state)`
-    -  ImGui button **Save CSV** (to `logs/` with timestamp filename)
+    -  Show timestep and sim time as text in the simulator viewport
+- **Admin panel**
+    -  Reset simulation (start over --- move everything back to start), set `dt`, select vehicle model (for later, when there is more than one model, e.g. kinematic/dynamic bicycle model), param sliders (wheelbase, input control limits)
+    -  Change parameters, then reset simulation, no need to change simulation parameters while it is running. This might require some rewiring to be able to restart simulations while the application is running.
 -  **Marker API (v1, RViz-like)**
-    -  `viz/Markers.hpp` with `(namespace, id) -> Marker`
-    -  Prims: `Point`, `Line`, `Text`, `Triad`
-    -  Fields: color, scale, `SE2` pose, optional `ttl_sec`
-    -  Draw + TTL expiry each frame; visibility toggles per namespace
--  **Transform tree (lean)**
-    -  `common/TF.hpp`:
-        -  `add_transform(parent, child, SE2 T, double stamp, bool static_)`
-        -  `resolve_to_world(frame, t, out SE2)` (climb & optional interp)
-    -  On marker ingest: **resolve immediately to world**; if missing → reject + UI toast
--  **Admin panel**
-    -  Reset pose, set `dt`, switch kinematic/dynamic (stub), param sliders (`L`, limits)
-    -  FPS, CPU timings, queue sizes (if any)
--  **Polish**
-    -  `spdlog` init + error console in ImGui
-    -  `clang-format` target; CI build (Linux + Windows at least)
-    -  `README` quickstart: vcpkg setup, configure, build, run
+    -  Collapsible Display panel to the left of the window, similar to RViz default layout. Visibility toggles per namespace in Display panel. Simulated objects (just car for now, traffic cones later as well) and markers each have a separate section of the Display panel (markers below, simulated objects above).  
+	    - There will be many traffic cones, so each cone type will have a namespace, e.g. "yellow_cones" --- and in the Display panel you can perhaps collapse the namespace to see all yellow cones with their different id's --- clicking marker/object in the simulation viewport should perhaps highlight the object/marker in the Display panel in some modes (for later) 
+    - `viz/markers.hpp` with `(namespace, id) -> Marker`
+    -  Prims similar to RViz, but only 2D stuff: `Text`,  `Arrow`,  `Rectangle`,  `Circle`, `LineList`, `LineStrip`, `RectangleList`, `CircleList`, `Points`, `TriangleList`, `2DMesh`
+    -  Fields: color, alpha, scale (in X and Y), `SE2` pose, optional `ttl_sec`
+ 
 -  **(Next phase, after MVP)**
     -  Replace kinematic with dynamic bicycle + simple actuator dynamics
-    -  State interpolation in viz (between last two ticks) for smooth 60 FPS        
     -  ZeroMQ + Protobuf IPC stub (state PUB, admin REQ/REP, control PUSH)
-    -  Python SDK (locked-cell client) with `step(n)` helper
-
+    -  Python SDK (for Jupyter notebook client) with `step(n)` helper
+#### Later on some time in the future
+ - **Determinism hooks**
+    -  Fixed time base (no wall-clock in physics)
+    -  RNG seeded by `(seed ^ tick)` (even if unused yet)
+    - Future: Per-tick state checksum (xxhash) for debugging determinism
+-  **Logging**
+    -  Set it up with the tracy profiler 
+    -  Ring buffer of `(tick, control, state)`
+    -  ImGui button **Save CSV** (to `logs/` with timestamp filename)
+    - `spdlog` init + error console in ImGui
+-  **Repo polish**
+    -  `clang-format` target; CI build (Linux + Windows at least)
+    -  `README` quickstart guide: vcpkg setup, configure, build, run`L`

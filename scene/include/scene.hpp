@@ -3,6 +3,7 @@
 #include "SE2.hpp"
 
 #include <atomic>
+#include <vector>
 
 namespace scene {
 
@@ -46,9 +47,24 @@ struct CarState {
   }
 };
 
+enum class ConeType { Blue, Yellow };
+
+struct Cone {
+  double x{0.0};
+  double y{0.0};
+  ConeType type{ConeType::Blue};
+
+  Cone() = default;
+  Cone(double x_, double y_, ConeType type_)
+    : x(x_)
+    , y(y_)
+    , type(type_) {
+  }
+};
+
 struct Scene {
   CarState car;
-  // array of traffic cones here later
+  std::vector<Cone> cones;
 };
 
 struct SceneDB {
