@@ -1,6 +1,33 @@
 # lilsim
 A simple 2D simulator for Formula Student Driverless.
 
+## Quick Start
+
+### Prerequisites
+1. **Download wgpu-native** (graphics library):
+   - Visit: https://github.com/gfx-rs/wgpu-native/releases
+   - Download the appropriate release for your platform (v0.19.4.1 or later)
+   - Extract to `third_party/wgpu-native/` so you have:
+     - `third_party/wgpu-native/include/`
+     - `third_party/wgpu-native/lib/`
+
+2. **Install vcpkg dependencies** (handled automatically by CMake):
+   - `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`
+
+### Build & Run
+```bash
+cmake --preset debug
+cmake --build --preset build-debug -j
+./run_debug.sh
+```
+
+### Controls
+- **WASD**: Drive the car (W=forward, S=brake, A=steer left, D=steer right)
+- **Mouse scroll**: Zoom in/out
+- **Close window**: Exit
+
+---
+
 # Driverless Algorithm Prototyping Simulator — Concept Overview
 
 ## Purpose
