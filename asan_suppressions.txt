@@ -1,0 +1,5 @@
+# Suppress known false positives from Vulkan loader
+# This is a bug in the Vulkan loader's interaction with ASan
+# We suppress all issues originating from libvulkan.so
+interceptor_via_lib:*/libvulkan.so*
+
