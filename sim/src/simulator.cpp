@@ -25,18 +25,9 @@ void Simulator::loop(double dt) {
 
   // Lambda to initialize/reset state
   auto resetState = [&]() {
-    m_state.car.pose = common::SE2(0, 0, 0);
+    m_state.car.pose = m_startPose;
     m_state.car.v = 0.0;
     m_state.car.yaw_rate = 0.0;
-
-    // Initialize cones (TODO: remove this later)
-    m_state.cones.clear();
-    m_state.cones.emplace_back(5.0, 5.0, scene::ConeType::Blue); // Top right
-    m_state.cones.emplace_back(5.0, -5.0,
-                               scene::ConeType::Yellow); // Bottom right
-    m_state.cones.emplace_back(-5.0, 5.0, scene::ConeType::Yellow); // Top left
-    m_state.cones.emplace_back(-5.0, -5.0,
-                               scene::ConeType::Blue); // Bottom left
 
     m_db.publish(m_state);
   };
@@ -44,6 +35,17 @@ void Simulator::loop(double dt) {
   resetState();
 
   while (m_running.load(std::memory_order_relaxed)) {
+    // Check for start pose update request
+    if (m_startPoseUpdateRequested.exchange(false, std::memory_order_relaxed)) {
+      m_startPose = m_newStartPose;
+    }
+    
+    // Check for cone update request
+    if (m_conesUpdateRequested.exchange(false, std::memory_order_relaxed)) {
+      m_state.cones = m_newCones;
+      m_db.publish(m_state);
+    }
+    
     // Check for reset request
     if (m_resetRequested.exchange(false, std::memory_order_relaxed)) {
       // Apply new parameters

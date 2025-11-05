@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CarDefaults.hpp"
 #include "SE2.hpp"
 
 #include <atomic>
@@ -9,18 +10,15 @@ namespace scene {
 
 struct CarState {
 
-  CarState(double wheelbase_ = 2.6, double Lf_ = 1.3, double v_max_ = 15.0,
-           double delta_max_ = 1.745) // ~100 degrees in radians
+  CarState(double wheelbase_ = common::CarDefaults::wheelbase,
+           double Lf_ = common::CarDefaults::Lf,
+           double v_max_ = common::CarDefaults::v_max,
+           double delta_max_ = common::CarDefaults::delta_max)
     : wheelbase(wheelbase_)
-    , // distance between axles
-    Lf(Lf_)
-    , // front axle to center of gravity
-    Lr(wheelbase_ - Lf_)
-    , // rear axle to center of gravity
-    v_max(v_max_)
-    ,                     // maximum velocity (m/s)
-    delta_max(delta_max_) // maximum steering angle (rad)
-  {
+    , Lf(Lf_)
+    , Lr(wheelbase_ - Lf_)
+    , v_max(v_max_)
+    , delta_max(delta_max_) {
     assert(Lf > 0.0 && Lf < wheelbase && Lr > 0.0 && Lr < wheelbase);
     assert(v_max > 0.0);
     assert(delta_max > 0.0);
@@ -47,7 +45,7 @@ struct CarState {
   }
 };
 
-enum class ConeType { Blue, Yellow };
+enum class ConeType { Blue, Yellow, Orange, BigOrange };
 
 struct Cone {
   double x{0.0};

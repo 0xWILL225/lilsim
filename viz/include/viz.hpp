@@ -14,6 +14,9 @@
 #include <GLFW/glfw3.h>
 #include <webgpu/webgpu.h>
 
+#include "CarDefaults.hpp"
+#include "panels/SidePanel.hpp"
+#include "panels/ViewportPanel.hpp"
 #include "scene.hpp"
 #include "simulator.hpp"
 
@@ -33,10 +36,7 @@ namespace viz {
  */
 class Application {
 public:
-  Application(scene::SceneDB& db, sim::Simulator& sim)
-    : m_sceneDB(db)
-    , m_simulator(sim) {
-  }
+  Application(scene::SceneDB& db, sim::Simulator& sim);
 
   bool initialize();
   void terminate();
@@ -44,22 +44,9 @@ public:
   bool isRunning();
   void onResize(int newWidth, int newHeight);
 
-  // Camera state (public for callback/input access)
-  enum class CameraMode { Free, CarFollow };
-  CameraMode cameraMode = CameraMode::CarFollow;
-
-  // Car-follow camera state
-  float followCarZoom = 50.0f; // pixels per meter
-
-  // Free camera state
-  float freeCameraX = 0.0f;
-  float freeCameraY = 0.0f;
-  float freeCameraZoom = 50.0f;
-
-  // Panel state
-  bool panelCollapsed = false;
-  float panelWidth = 300.0f;
-  bool panelResizing = false;
+  // Public for callback access
+  ViewportPanel m_viewportPanel;
+  SidePanel m_rightPanel;
 
 private:
   // References to scene and simulator
@@ -79,10 +66,20 @@ private:
 
   float m_clearColor[4] = {0.45f, 0.55f, 0.60f, 1.00f};
 
-  // Input state
+  // Input state for car control
   bool m_keyW = false, m_keyA = false, m_keyS = false, m_keyD = false;
-  bool m_mouseLeftPressed = false;
-  float m_lastMouseX = 0.0f, m_lastMouseY = 0.0f;
+
+  // UI state for simulation parameters
+  float m_uiWheelbase = static_cast<float>(common::CarDefaults::wheelbase);
+  float m_uiVMax = static_cast<float>(common::CarDefaults::v_max);
+  float m_uiDeltaMax = static_cast<float>(common::CarDefaults::delta_max);
+  float m_uiDt = static_cast<float>(common::CarDefaults::dt);
+  int m_stepN = 10;
+
+  // Track loading state
+  char m_trackDirBuffer[512] = "";
+  std::vector<std::string> m_availableTracks;
+  int m_selectedTrackIndex = -1;
 
   bool initGLFW();
   bool initWebGPU();
@@ -92,6 +89,8 @@ private:
   void terminateGLFW();
   void handleInput();
   void render2D();
+  void setupPanels();
+  void scanTrackDirectory();
 };
 
 } // namespace viz

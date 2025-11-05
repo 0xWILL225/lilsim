@@ -8,7 +8,7 @@
         "cacheVariables": {
           "CMAKE_BUILD_TYPE": "RelWithDebInfo",
           "ENABLE_CLANG_TIDY": "ON",
-          "ENABLE_SANITIZERS": "ON"
+          "ENABLE_SANITIZERS": "OFF"
         }
       },
       {

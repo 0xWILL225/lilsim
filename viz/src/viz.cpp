@@ -1,7 +1,12 @@
 #include "viz.hpp"
+#include "KeyBindings.hpp"
+#include "TrackLoader.hpp"
 
 #include <GLFW/glfw3native.h>
+#include <ImGuiFileDialog.h>
 #include <cstdio>
+#include <filesystem>
+#include <algorithm>
 
 // Undefine X11 macros that conflict with other headers
 #ifdef Success
@@ -22,6 +27,23 @@
   }
 
 namespace viz {
+
+Application::Application(scene::SceneDB& db, sim::Simulator& sim)
+  : m_sceneDB(db)
+  , m_simulator(sim)
+  , m_rightPanel("Admin Panel", SidePanel::Side::Right, 300.0f)
+  , m_viewportPanel(db) {
+  // Set default track directory to executable path + /tracks
+  std::filesystem::path exePath = std::filesystem::current_path();
+  std::string defaultTrackPath = (exePath / "tracks").string();
+  strncpy(m_trackDirBuffer, defaultTrackPath.c_str(), sizeof(m_trackDirBuffer) - 1);
+  m_trackDirBuffer[sizeof(m_trackDirBuffer) - 1] = '\0';
+  
+  setupPanels();
+  
+  // Scan the default directory for tracks
+  scanTrackDirectory();
+}
 
 /**
  * @brief GLFW callback for framebuffer resize events.
@@ -51,15 +73,22 @@ static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
   (void)xoffset;
   auto* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
   if (app) {
+    // Only zoom if hovering over the viewport
+    if (!app->m_viewportPanel.isHovered()) {
+      return;
+    }
+
     // Zoom in/out with scroll wheel (10% per scroll tick)
     float zoomDelta = (yoffset > 0) ? 1.1f : 0.9f;
 
-    if (app->cameraMode == Application::CameraMode::Free) {
-      app->freeCameraZoom *= zoomDelta;
-      app->freeCameraZoom = std::clamp(app->freeCameraZoom, 5.0f, 500.0f);
+    if (app->m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free) {
+      app->m_viewportPanel.freeCameraZoom *= zoomDelta;
+      app->m_viewportPanel.freeCameraZoom =
+        std::clamp(app->m_viewportPanel.freeCameraZoom, 5.0f, 500.0f);
     } else {
-      app->followCarZoom *= zoomDelta;
-      app->followCarZoom = std::clamp(app->followCarZoom, 5.0f, 500.0f);
+      app->m_viewportPanel.followCarZoom *= zoomDelta;
+      app->m_viewportPanel.followCarZoom =
+        std::clamp(app->m_viewportPanel.followCarZoom, 5.0f, 500.0f);
     }
   }
 }
@@ -619,62 +648,40 @@ void Application::onResize(int newWidth, int newHeight) {
  * - Scroll: Zoom (handled in callback)
  */
 void Application::handleInput() {
-  // Toggle camera mode with spacebar
-  static bool spaceWasPressed = false;
-  static bool freeCameraInitialized = false;
-  bool spacePressed = glfwGetKey(m_window, GLFW_KEY_SPACE) == GLFW_PRESS;
-  if (spacePressed && !spaceWasPressed) {
-    if (cameraMode == CameraMode::CarFollow) {
-      // Switch to free camera
-      // Only initialize position on first switch, otherwise keep saved position
-      if (!freeCameraInitialized) {
-        const scene::Scene& scene = m_sceneDB.snapshot();
-        freeCameraX = (float)scene.car.x();
-        freeCameraY = (float)scene.car.y();
-        freeCameraInitialized = true;
-      }
-      cameraMode = CameraMode::Free;
+  // Handle viewport panel input (camera controls)
+  m_viewportPanel.handleInput(m_window);
+
+  // Pause/Resume simulation
+  static bool pauseKeyWasPressed = false;
+  bool pauseKeyPressed = glfwGetKey(m_window, gKeyBindings.pauseSimulation) == GLFW_PRESS;
+  if (pauseKeyPressed && !pauseKeyWasPressed) {
+    if (m_simulator.isPaused()) {
+      m_simulator.resume();
     } else {
-      cameraMode = CameraMode::CarFollow;
+      m_simulator.pause();
     }
   }
-  spaceWasPressed = spacePressed;
+  pauseKeyWasPressed = pauseKeyPressed;
 
-  // Free camera pan with mouse drag
-  if (cameraMode == CameraMode::Free) {
-    bool mousePressed =
-      glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-    double mouseX, mouseY;
-    glfwGetCursorPos(m_window, &mouseX, &mouseY);
-
-    if (mousePressed && m_mouseLeftPressed) {
-      // Pan camera
-      float dx = (float)(mouseX - m_lastMouseX);
-      float dy = (float)(mouseY - m_lastMouseY);
-
-      // Transform mouse delta to world delta
-      // Mouse right (+dx) -> world +Y (left in viewport)
-      // Mouse down (+dy) -> world -X (down in viewport, which is -X up)
-      freeCameraY += dx / freeCameraZoom;
-      freeCameraX += dy / freeCameraZoom;
-    }
-
-    m_mouseLeftPressed = mousePressed;
-    m_lastMouseX = (float)mouseX;
-    m_lastMouseY = (float)mouseY;
+  // Reset simulation
+  static bool resetKeyWasPressed = false;
+  bool resetKeyPressed = glfwGetKey(m_window, gKeyBindings.resetSimulation) == GLFW_PRESS;
+  if (resetKeyPressed && !resetKeyWasPressed) {
+    m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiDeltaMax, m_uiDt);
   }
+  resetKeyWasPressed = resetKeyPressed;
 
-  // Update key states for car control
-  m_keyW = glfwGetKey(m_window, GLFW_KEY_W) == GLFW_PRESS;
-  m_keyS = glfwGetKey(m_window, GLFW_KEY_S) == GLFW_PRESS;
-  m_keyA = glfwGetKey(m_window, GLFW_KEY_A) == GLFW_PRESS;
-  m_keyD = glfwGetKey(m_window, GLFW_KEY_D) == GLFW_PRESS;
+  // Update key states for car control using keybindings
+  m_keyW = glfwGetKey(m_window, gKeyBindings.carAccelerate) == GLFW_PRESS;
+  m_keyS = glfwGetKey(m_window, gKeyBindings.carBrake) == GLFW_PRESS;
+  m_keyA = glfwGetKey(m_window, gKeyBindings.carSteerLeft) == GLFW_PRESS;
+  m_keyD = glfwGetKey(m_window, gKeyBindings.carSteerRight) == GLFW_PRESS;
 
   // Construct control input
   sim::CarInput input{};
 
-  // Acceleration: W = +2.0 m/s², S = -2.0 m/s²
-  const double accel = 2.0;
+  // Acceleration:
+  const double accel = 7.0;
   if (m_keyW)
     input.ax = accel;
   else if (m_keyS)
@@ -682,7 +689,7 @@ void Application::handleInput() {
   else
     input.ax = 0.0;
 
-  // Steering: A = -0.5 rad (left), D = +0.5 rad (right)
+  // Steering: +0.5 rad left, -0.5 rad right
   const double steer_angle = 0.5;
   if (m_keyA)
     input.delta = steer_angle;
@@ -696,72 +703,13 @@ void Application::handleInput() {
 }
 
 /**
- * @brief Renders the 2D simulation scene and admin panel.
+ * @brief Sets up panel sections with their drawing functions.
  *
- * Draws:
- * - Admin panel (right side): simulation info and controls reference
- * - Grid background (1m x 1m cells in world frame)
- * - Car as a red triangle
- * - Cones as colored circles (blue with white stripe, yellow with black stripe)
- * - Camera follows car or is free-moving based on mode
+ * This is called once during construction to define what each panel contains.
  */
-void Application::render2D() {
-  // Get current scene state
-  const scene::Scene& scene = m_sceneDB.snapshot();
-  const scene::CarState& car = scene.car;
-
-  // Admin panel (right side)
-  const float collapsedWidth = 30.0f;
-  const float currentPanelWidth = panelCollapsed ? collapsedWidth : panelWidth;
-
-  ImGui::SetNextWindowPos(ImVec2((float)m_width - currentPanelWidth, 0));
-  ImGui::SetNextWindowSize(ImVec2(currentPanelWidth, (float)m_height));
-  ImGui::Begin("Admin", nullptr,
-               ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize
-                 | ImGuiWindowFlags_NoTitleBar);
-
-  if (panelCollapsed) {
-    // Show just expand button when collapsed
-    if (ImGui::Button("<", ImVec2(20, 30))) {
-      panelCollapsed = false;
-    }
-  } else {
-    // Resize handle (invisible button on left edge)
-    ImGui::SetCursorPos(ImVec2(0, 0));
-    ImGui::InvisibleButton("##resize", ImVec2(5, (float)m_height));
-
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    }
-
-    if (ImGui::IsItemActive()) {
-      panelResizing = true;
-    }
-
-    if (panelResizing) {
-      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-      if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        double mouseX, mouseY;
-        glfwGetCursorPos(m_window, &mouseX, &mouseY);
-        panelWidth = std::clamp((float)(m_width - mouseX), 150.0f, 600.0f);
-      } else {
-        panelResizing = false;
-      }
-    }
-
-    ImGui::SetCursorPos(ImVec2(10, 5));
-    // Collapse button
-    if (ImGui::Button(">", ImVec2(20, 20))) {
-      panelCollapsed = true;
-    }
-    ImGui::SameLine();
-    ImGui::Text("Admin Panel");
-
-    ImGui::Separator();
-    ImGui::Text("Simulation Control");
-    ImGui::Separator();
-
-    // Sim control buttons
+void Application::setupPanels() {
+  // Simulation Control section
+  m_rightPanel.addSection("Simulation Control", [this]() {
     bool isPaused = m_simulator.isPaused();
     if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(140, 30))) {
       if (isPaused) {
@@ -779,32 +727,26 @@ void Application::render2D() {
     }
 
     // StepN with input field
-    static int stepN = 10;
     ImGui::SetNextItemWidth(100);
-    ImGui::InputInt("##StepN", &stepN, 1, 100);
-    stepN = std::max(1, stepN);
+    ImGui::InputInt("##StepN", &m_stepN, 1, 100);
+    m_stepN = std::max(1, m_stepN);
 
     ImGui::SameLine();
     if (ImGui::Button("Step N", ImVec2(70, 30))) {
       m_simulator.pause();
-      m_simulator.step((uint64_t)stepN);
+      m_simulator.step((uint64_t)m_stepN);
       m_simulator.resume();
     }
 
     // Reset button
-    static float uiWheelbase = 2.6f;
-    static float uiVMax = 15.0f;
-    static float uiDeltaMax = 1.745f;
-    static float uiDt = 1.0f / 200.0f;
-
     if (ImGui::Button("Reset", ImVec2(-1, 30))) {
-      m_simulator.reset(uiWheelbase, uiVMax, uiDeltaMax, uiDt);
+      m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiDeltaMax, m_uiDt);
     }
+  });
 
-    ImGui::Separator();
-
-    // Simulation parameters (apply on reset)
-    ImGui::Text("Parameters (apply on reset):");
+  // Parameters section
+  m_rightPanel.addSection("Parameters", [this]() {
+    ImGui::Text("Apply on reset:");
     ImGui::Spacing();
 
     // Wheelbase
@@ -812,8 +754,8 @@ void Application::render2D() {
     ImGui::BeginChild("##wheelbase_param", ImVec2(0, 60), true);
     ImGui::Text("Wheelbase (m)");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##wheelbase", &uiWheelbase, 0.1f, 1.0f, "%.2f")) {
-      uiWheelbase = std::max(0.1f, uiWheelbase);
+    if (ImGui::InputFloat("##wheelbase", &m_uiWheelbase, 0.1f, 1.0f, "%.2f")) {
+      m_uiWheelbase = std::max(0.1f, m_uiWheelbase);
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -823,8 +765,8 @@ void Application::render2D() {
     ImGui::BeginChild("##vmax_param", ImVec2(0, 60), true);
     ImGui::Text("Max Velocity (m/s)");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##vmax", &uiVMax, 1.0f, 5.0f, "%.1f")) {
-      uiVMax = std::max(0.1f, uiVMax);
+    if (ImGui::InputFloat("##vmax", &m_uiVMax, 1.0f, 5.0f, "%.1f")) {
+      m_uiVMax = std::max(0.1f, m_uiVMax);
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -834,8 +776,8 @@ void Application::render2D() {
     ImGui::BeginChild("##deltamax_param", ImVec2(0, 60), true);
     ImGui::Text("Max Steering (rad)");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##deltamax", &uiDeltaMax, 0.1f, 0.5f, "%.3f")) {
-      uiDeltaMax = std::max(0.01f, uiDeltaMax);
+    if (ImGui::InputFloat("##deltamax", &m_uiDeltaMax, 0.1f, 0.5f, "%.3f")) {
+      m_uiDeltaMax = std::max(0.01f, m_uiDeltaMax);
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -845,15 +787,116 @@ void Application::render2D() {
     ImGui::BeginChild("##dt_param", ImVec2(0, 60), true);
     ImGui::Text("Timestep (s)");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##dt", &uiDt, 0.001f, 0.01f, "%.4f")) {
-      uiDt = std::clamp(uiDt, 0.0001f, 0.1f);
+    if (ImGui::InputFloat("##dt", &m_uiDt, 0.001f, 0.01f, "%.4f")) {
+      m_uiDt = std::clamp(m_uiDt, 0.0001f, 0.1f);
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
     ImGui::Separator();
+    ImGui::Text("Track Loading:");
+    ImGui::Spacing();
 
-    // Display info
+    // Track directory input with Browse button
+    ImGui::Text("Track Directory:");
+    ImGui::SetNextItemWidth(-80);
+    if (ImGui::InputText("##trackdir", m_trackDirBuffer,
+                         sizeof(m_trackDirBuffer))) {
+      scanTrackDirectory();
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("Browse...", ImVec2(70, 0))) {
+      IGFD::FileDialogConfig config;
+      config.path = m_trackDirBuffer;
+      config.flags = ImGuiFileDialogFlags_Modal;
+      ImGuiFileDialog::Instance()->OpenDialog("ChooseDirDlgKey", "Choose Directory", 
+                                               nullptr, config);
+    }
+
+    // Display file dialog
+    if (ImGuiFileDialog::Instance()->Display("ChooseDirDlgKey", 
+                                              ImGuiWindowFlags_NoCollapse, 
+                                              ImVec2(600, 400))) {
+      if (ImGuiFileDialog::Instance()->IsOk()) {
+        std::string selectedPath = ImGuiFileDialog::Instance()->GetCurrentPath();
+        snprintf(m_trackDirBuffer, sizeof(m_trackDirBuffer), "%s", selectedPath.c_str());
+        scanTrackDirectory();
+      }
+      ImGuiFileDialog::Instance()->Close();
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Available Tracks:");
+
+    // Track list with alternating colors
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+    ImGui::BeginChild("##tracklist", ImVec2(0, 150), true);
+
+    if (m_availableTracks.empty()) {
+      ImGui::TextDisabled("No tracks found");
+    } else {
+      for (size_t i = 0; i < m_availableTracks.size(); ++i) {
+        // Alternating row colors
+        ImVec4 rowColor = (i % 2 == 0) ? ImVec4(0.18f, 0.18f, 0.20f, 1.0f)
+                                       : ImVec4(0.15f, 0.15f, 0.17f, 1.0f);
+
+        ImGui::PushStyleColor(ImGuiCol_Header, rowColor);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+                              ImVec4(0.25f, 0.25f, 0.30f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive,
+                              ImVec4(0.30f, 0.40f, 0.50f, 1.0f));
+
+        bool isSelected = (m_selectedTrackIndex == static_cast<int>(i));
+        if (ImGui::Selectable(m_availableTracks[i].c_str(), isSelected,
+                              ImGuiSelectableFlags_AllowDoubleClick,
+                              ImVec2(0, 20))) {
+          m_selectedTrackIndex = static_cast<int>(i);
+
+          // Load track on double-click
+          if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            std::string filepath = std::string(m_trackDirBuffer) + "/" +
+                                   m_availableTracks[i] + ".csv";
+            scene::TrackData trackData;
+            if (scene::TrackLoader::loadFromCSV(filepath, trackData)) {
+              m_simulator.setCones(trackData.cones);
+              if (trackData.startPose.has_value()) {
+                m_simulator.setStartPose(trackData.startPose.value());
+              }
+            }
+          }
+        }
+
+        ImGui::PopStyleColor(3);
+      }
+    }
+
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // Load button
+    ImGui::Spacing();
+    if (ImGui::Button("Load Selected Track", ImVec2(-1, 30))) {
+      if (m_selectedTrackIndex >= 0 &&
+          m_selectedTrackIndex < static_cast<int>(m_availableTracks.size())) {
+        std::string filepath = std::string(m_trackDirBuffer) + "/" +
+                               m_availableTracks[m_selectedTrackIndex] + ".csv";
+        scene::TrackData trackData;
+        if (scene::TrackLoader::loadFromCSV(filepath, trackData)) {
+          m_simulator.setCones(trackData.cones);
+          if (trackData.startPose.has_value()) {
+            m_simulator.setStartPose(trackData.startPose.value());
+          }
+        }
+      }
+    }
+  });
+
+  // Status section
+  m_rightPanel.addSection("Status", [this]() {
+    const scene::Scene& scene = m_sceneDB.snapshot();
+    const scene::CarState& car = scene.car;
+
     uint64_t tick = m_sceneDB.tick.load();
     double simTime = tick * m_simulator.getDt();
     ImGui::Text("Tick: %lu", (unsigned long)tick);
@@ -862,12 +905,15 @@ void Application::render2D() {
     ImGui::Text("Position: (%.1f, %.1f)", car.x(), car.y());
     ImGui::Text("Yaw: %.1f deg", car.yaw() * 180.0 / M_PI);
     ImGui::Text("Camera: %s",
-                cameraMode == CameraMode::Free ? "Free" : "Car Follow");
-    if (cameraMode == CameraMode::Free) {
-      ImGui::Text("Zoom: %.1f px/m", freeCameraZoom);
-      ImGui::Text("Pos: (%.1f, %.1f)", freeCameraX, freeCameraY);
+                m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free
+                  ? "Free"
+                  : "Car Follow");
+    if (m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free) {
+      ImGui::Text("Zoom: %.1f px/m", m_viewportPanel.freeCameraZoom);
+      ImGui::Text("Pos: (%.1f, %.1f)", m_viewportPanel.freeCameraX,
+                  m_viewportPanel.freeCameraY);
     } else {
-      ImGui::Text("Zoom: %.1f px/m", followCarZoom);
+      ImGui::Text("Zoom: %.1f px/m", m_viewportPanel.followCarZoom);
     }
 
     ImGui::Separator();
@@ -876,138 +922,42 @@ void Application::render2D() {
     ImGui::BulletText("Space: Toggle camera");
     ImGui::BulletText("Mouse drag: Pan (free mode)");
     ImGui::BulletText("Scroll: Zoom");
-  }
+  });
+}
 
-  ImGui::End();
+/**
+ * @brief Renders the 2D simulation scene and admin panel.
+ */
+void Application::render2D() {
+  // Draw right panel
+  m_rightPanel.draw(m_width, m_height);
 
-  // Create ImGui window for 2D viewport (leave space for panel)
-  ImGui::SetNextWindowPos(ImVec2(0, 0));
-  ImGui::SetNextWindowSize(
-    ImVec2((float)m_width - currentPanelWidth, (float)m_height));
-  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-  ImGui::Begin(
-    "Viewport", nullptr,
-    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
-      | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar
-      | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse
-      | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoBackground);
+  // Draw viewport (fill remaining space)
+  float rightPanelWidth = m_rightPanel.getWidth();
+  m_viewportPanel.draw(0, 0, (float)m_width - rightPanelWidth, (float)m_height);
+}
 
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+/**
+ * @brief Scans the track directory for CSV files.
+ */
+void Application::scanTrackDirectory() {
+  m_availableTracks.clear();
+  m_selectedTrackIndex = -1;
 
-  // Camera parameters based on mode
-  const float cx = (m_width - currentPanelWidth) * 0.5f;
-  const float cy = m_height * 0.5f;
-  const float car_x = (float)car.x();
-  const float car_y = (float)car.y();
-  const float car_yaw = (float)car.yaw();
-
-  float cam_x, cam_y, cam_yaw, cam_zoom;
-
-  if (cameraMode == CameraMode::CarFollow) {
-    cam_x = car_x;
-    cam_y = car_y;
-    cam_yaw = car_yaw;
-    cam_zoom = followCarZoom;
-  } else {
-    cam_x = freeCameraX;
-    cam_y = freeCameraY;
-    cam_yaw = 0.0f; // Free camera doesn't rotate
-    cam_zoom = freeCameraZoom;
-  }
-
-  // Helper lambda to transform world coordinates to screen coordinates
-  // Camera setup: +X up in viewport, +Y left in viewport
-  auto worldToScreen = [&](float wx, float wy) -> ImVec2 {
-    // Translate to camera frame
-    float dx = wx - cam_x;
-    float dy = wy - cam_y;
-    // Rotate by -cam_yaw
-    float cos_yaw = std::cos(-cam_yaw);
-    float sin_yaw = std::sin(-cam_yaw);
-    float rx = dx * cos_yaw - dy * sin_yaw;
-    float ry = dx * sin_yaw + dy * cos_yaw;
-    // Apply -90° rotation: +X world -> up in viewport, +Y world -> left
-    float vx = -ry;
-    float vy = rx;
-    // Scale and translate to screen
-    float sx = cx + vx * cam_zoom;
-    float sy = cy - vy * cam_zoom; // Flip Y for screen coords
-    return ImVec2(sx, sy);
-  };
-
-  // Draw grid (1m x 1m cells)
-  const float grid_size = 1.0f; // meters
-  const int grid_range = 50;    // draw ±50 meters
-  ImU32 grid_color = IM_COL32(100, 100, 100, 100);
-
-  for (int i = -grid_range; i <= grid_range; ++i) {
-    float world_coord = i * grid_size;
-    // Vertical lines (constant X)
-    ImVec2 p1 = worldToScreen(world_coord, -grid_range * grid_size);
-    ImVec2 p2 = worldToScreen(world_coord, grid_range * grid_size);
-    draw_list->AddLine(p1, p2, grid_color, 1.0f);
-    // Horizontal lines (constant Y)
-    ImVec2 p3 = worldToScreen(-grid_range * grid_size, world_coord);
-    ImVec2 p4 = worldToScreen(grid_range * grid_size, world_coord);
-    draw_list->AddLine(p3, p4, grid_color, 1.0f);
-  }
-
-  // Draw car as triangle
-  // Car dimensions: wheelbase length, 1m wide
-  const float car_length = (float)car.wheelbase;
-  const float car_width = 1.0f;
-
-  // Triangle vertices in car local frame (+X forward, +Y left)
-  // Front tip, rear left, rear right
-  ImVec2 v1 = worldToScreen(car_x + car_length * 0.5f * std::cos(car_yaw),
-                            car_y + car_length * 0.5f * std::sin(car_yaw));
-  ImVec2 v2 =
-    worldToScreen(car_x
-                    + (-car_length * 0.5f * std::cos(car_yaw)
-                       + car_width * 0.5f * std::cos(car_yaw + M_PI_2)),
-                  car_y
-                    + (-car_length * 0.5f * std::sin(car_yaw)
-                       + car_width * 0.5f * std::sin(car_yaw + M_PI_2)));
-  ImVec2 v3 =
-    worldToScreen(car_x
-                    + (-car_length * 0.5f * std::cos(car_yaw)
-                       - car_width * 0.5f * std::cos(car_yaw + M_PI_2)),
-                  car_y
-                    + (-car_length * 0.5f * std::sin(car_yaw)
-                       - car_width * 0.5f * std::sin(car_yaw + M_PI_2)));
-
-  ImU32 car_color = IM_COL32(255, 100, 100, 255);
-  draw_list->AddTriangleFilled(v1, v2, v3, car_color);
-  draw_list->AddTriangle(v1, v2, v3, IM_COL32(200, 50, 50, 255), 2.0f);
-
-  // Draw cones
-  for (const auto& cone : scene.cones) {
-    ImVec2 center = worldToScreen((float)cone.x, (float)cone.y);
-
-    // Cone dimensions (viewed from above)
-    const float base_radius = 0.125f;  // 0.25m diameter base
-    const float stripe_radius = 0.08f; // middle stripe
-    const float top_radius = 0.04f;    // top circle
-
-    // Colors based on cone type
-    ImU32 base_color, stripe_color;
-    if (cone.type == scene::ConeType::Blue) {
-      base_color = IM_COL32(50, 100, 255, 255);    // Blue
-      stripe_color = IM_COL32(255, 255, 255, 255); // White stripe
-    } else {
-      base_color = IM_COL32(255, 220, 0, 255);  // Yellow
-      stripe_color = IM_COL32(50, 50, 50, 255); // Black stripe
+  namespace fs = std::filesystem;
+  try {
+    if (fs::exists(m_trackDirBuffer) && fs::is_directory(m_trackDirBuffer)) {
+      for (const auto& entry : fs::directory_iterator(m_trackDirBuffer)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".csv") {
+          std::string stem = entry.path().stem().string();
+          m_availableTracks.push_back(stem);
+        }
+      }
+      std::sort(m_availableTracks.begin(), m_availableTracks.end());
     }
-
-    // Draw three circles (largest to smallest)
-    draw_list->AddCircleFilled(center, base_radius * cam_zoom, base_color, 16);
-    draw_list->AddCircleFilled(center, stripe_radius * cam_zoom, stripe_color,
-                               12);
-    draw_list->AddCircleFilled(center, top_radius * cam_zoom, base_color, 8);
+  } catch (...) {
+    // Ignore errors
   }
-
-  ImGui::End();
-  ImGui::PopStyleVar();
 }
 
 } // namespace viz

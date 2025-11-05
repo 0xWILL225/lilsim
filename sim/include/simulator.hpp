@@ -1,8 +1,11 @@
 #pragma once
 #include <atomic>
 #include <thread>
+#include <optional>
 
+#include "CarDefaults.hpp"
 #include "scene.hpp"
+#include "SE2.hpp"
 
 namespace sim {
 
@@ -50,27 +53,40 @@ public:
     m_newParams.delta_max = delta_max;
     m_newParams.dt = dt;
   }
+  void setCones(const std::vector<scene::Cone>& cones) {
+    m_conesUpdateRequested.store(true, std::memory_order_relaxed);
+    m_newCones = cones;
+  }
+  void setStartPose(const common::SE2& pose) {
+    m_startPoseUpdateRequested.store(true, std::memory_order_relaxed);
+    m_newStartPose = pose;
+  }
 
 private:
   void loop(double dt);
 
   struct ResetParams {
-    double wheelbase{2.6};
-    double v_max{15.0};
-    double delta_max{1.745};
-    double dt{1.0 / 200.0};
+    double wheelbase{common::CarDefaults::wheelbase};
+    double v_max{common::CarDefaults::v_max};
+    double delta_max{common::CarDefaults::delta_max};
+    double dt{common::CarDefaults::dt};
   };
 
   scene::SceneDB& m_db;
   std::atomic<bool> m_running{false};
   std::atomic<bool> m_paused{false};
   std::atomic<bool> m_resetRequested{false};
+  std::atomic<bool> m_conesUpdateRequested{false};
+  std::atomic<bool> m_startPoseUpdateRequested{false};
   std::atomic<uint64_t> m_stepTarget{0}; // 0 = run continuously, >0 = step mode
   std::thread m_thread;
   std::atomic<CarInput> m_input;
   scene::Scene m_state; // reuse Scene as holder for car state
   double m_dt{0.0};     // timestep, set by start()
   ResetParams m_newParams;
+  std::vector<scene::Cone> m_newCones;
+  common::SE2 m_newStartPose{0.0, 0.0, 0.0};
+  common::SE2 m_startPose{0.0, 0.0, 0.0}; // Current starting pose
 };
 
 } // namespace sim

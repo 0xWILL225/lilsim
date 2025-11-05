@@ -10,17 +10,32 @@ set_target_properties(wgpu_native PROPERTIES
   INTERFACE_INCLUDE_DIRECTORIES ${WGPU_NATIVE_DIR}/include
 )
 
-add_library(viz STATIC
-  src/viz.cpp
-  ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp
+# Add ImGuiFileDialog as a header-only library
+add_library(ImGuiFileDialog INTERFACE)
+target_include_directories(ImGuiFileDialog INTERFACE
+  ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog
 )
 
-# Disable clang-tidy for third-party imgui_wgpu files
+add_library(viz STATIC
+  src/viz.cpp
+  src/KeyBindings.cpp
+  src/panels/SidePanel.cpp
+  src/panels/ViewportPanel.cpp
+  ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp
+  ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog/ImGuiFileDialog.cpp
+)
+
+# Disable clang-tidy for third-party files
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp
   PROPERTIES
   SKIP_LINTING ON
   COMPILE_DEFINITIONS "IMGUI_IMPL_WEBGPU_BACKEND_WGPU"
+)
+set_source_files_properties(
+  ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog/ImGuiFileDialog.cpp
+  PROPERTIES
+  SKIP_LINTING ON
 )
 
 target_include_directories(viz PUBLIC 
@@ -37,6 +52,7 @@ target_link_libraries(viz PUBLIC
   common
   glfw
   imgui::imgui
+  ImGuiFileDialog
   wgpu_native
   ${X11_LIBRARIES}
 )
