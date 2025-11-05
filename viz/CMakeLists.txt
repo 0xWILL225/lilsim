@@ -1,5 +1,6 @@
 find_package(glfw3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 find_package(X11 REQUIRED)
 
 # Add wgpu-native
@@ -19,6 +20,7 @@ target_include_directories(ImGuiFileDialog INTERFACE
 add_library(viz STATIC
   src/viz.cpp
   src/KeyBindings.cpp
+  src/MarkerSystem.cpp
   src/panels/SidePanel.cpp
   src/panels/ViewportPanel.cpp
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp
@@ -50,10 +52,12 @@ target_link_libraries(viz PUBLIC
   scene 
   sim
   common
+  comm
   glfw
   imgui::imgui
   ImGuiFileDialog
   wgpu_native
+  spdlog::spdlog
   ${X11_LIBRARIES}
 )
 setup_warnings(viz)

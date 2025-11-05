@@ -1,29 +1,9 @@
-- **Camera**
-	- Add free camera mode that starts centered in the world frame. Zoom in/out and panning possible.
-	- Switch between free camera and car-following camera with a quick keyboard shortcut, let's say spacebar for now.
-- **Transform tree (lean)**
-    -  There's a global "world" frame, and one frame for each simulated object. In our case it should be fine to just have a "world" frame and a "car" frame and nothing else. Let's keep it simple.
-    - Importantly, whether the camera is focusing on the car or world frame, all markers and simulated objects must be correctly transformed
-    - Ingested markers must specify world or car frame. So markers in car frame will follow the car and be static in the world frame
--  **Sim run modes**
-    -  States: `Paused | Running | StepPending`
-    -  Buttons: **Run/Pause**, **Step(1)**, **Step(N)** (input N in some textbox)
-    -  Implement deterministic step: exactly one `dt` then pause
-    -  Show timestep and sim time as text in the simulator viewport
-- **Admin panel**
-    -  Reset simulation (start over --- move everything back to start), set `dt`, select vehicle model (for later, when there is more than one model, e.g. kinematic/dynamic bicycle model), param sliders (wheelbase, input control limits)
-    -  Change parameters, then reset simulation, no need to change simulation parameters while it is running. This might require some rewiring to be able to restart simulations while the application is running.
--  **Marker API (v1, RViz-like)**
-    -  Collapsible Display panel to the left of the window, similar to RViz default layout. Visibility toggles per namespace in Display panel. Simulated objects (just car for now, traffic cones later as well) and markers each have a separate section of the Display panel (markers below, simulated objects above).  
-	    - There will be many traffic cones, so each cone type will have a namespace, e.g. "yellow_cones" --- and in the Display panel you can perhaps collapse the namespace to see all yellow cones with their different id's --- clicking marker/object in the simulation viewport should perhaps highlight the object/marker in the Display panel in some modes (for later) 
-    - `viz/markers.hpp` with `(namespace, id) -> Marker`
-    -  Prims similar to RViz, but only 2D stuff: `Text`,  `Arrow`,  `Rectangle`,  `Circle`, `LineList`, `LineStrip`, `RectangleList`, `CircleList`, `Points`, `TriangleList`, `2DMesh`
-    -  Fields: color, alpha, scale (in X and Y), `SE2` pose, optional `ttl_sec`
- 
+
 -  **(Next phase, after MVP)**
     -  Replace kinematic with dynamic bicycle + simple actuator dynamics
     -  ZeroMQ + Protobuf IPC stub (state PUB, admin REQ/REP, control PUSH)
     -  Python SDK (for Jupyter notebook client) with `step(n)` helper
+
 #### Later on some time in the future
  - **Determinism hooks**
     -  Fixed time base (no wall-clock in physics)

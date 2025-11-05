@@ -147,6 +147,7 @@ endif()
 
 # ---- Subdirectories ----
 add_subdirectory(common)
+add_subdirectory(comm)
 add_subdirectory(scene)
 add_subdirectory(sim)
 add_subdirectory(viz)

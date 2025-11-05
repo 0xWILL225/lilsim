@@ -1,8 +1,10 @@
 #include "viz.hpp"
 #include "KeyBindings.hpp"
 #include "TrackLoader.hpp"
+#include "comm/CommServer.hpp"
 
 #include <GLFW/glfw3native.h>
+#include <spdlog/spdlog.h>
 #include <ImGuiFileDialog.h>
 #include <cstdio>
 #include <filesystem>
@@ -32,7 +34,8 @@ Application::Application(scene::SceneDB& db, sim::Simulator& sim)
   : m_sceneDB(db)
   , m_simulator(sim)
   , m_rightPanel("Admin Panel", SidePanel::Side::Right, 300.0f)
-  , m_viewportPanel(db) {
+  , m_leftPanel("Display", SidePanel::Side::Left, 300.0f)
+  , m_viewportPanel(db, &m_markerSystem, &m_showCar, &m_showCones) {
   // Set default track directory to executable path + /tracks
   std::filesystem::path exePath = std::filesystem::current_path();
   std::string defaultTrackPath = (exePath / "tracks").string();
@@ -43,6 +46,21 @@ Application::Application(scene::SceneDB& db, sim::Simulator& sim)
   
   // Scan the default directory for tracks
   scanTrackDirectory();
+  
+  // Initialize marker subscriber
+  m_markerSub = std::make_unique<comm::MarkerSubscriber>();
+  if (m_markerSub->start()) {
+    spdlog::info("[viz] Marker subscriber started");
+  } else {
+    spdlog::error("[viz] Failed to start marker subscriber");
+  }
+}
+
+Application::~Application() {
+  // Destructor defined here to handle unique_ptr with forward-declared types
+  if (m_markerSub) {
+    m_markerSub->stop();
+  }
 }
 
 /**
@@ -708,6 +726,52 @@ void Application::handleInput() {
  * This is called once during construction to define what each panel contains.
  */
 void Application::setupPanels() {
+  // === Display Panel (Left) ===
+  
+  // Simulated Objects section
+  m_leftPanel.addSection("Simulated Objects", [this]() {
+    ImGui::Checkbox("Car", &m_showCar);
+    ImGui::Checkbox("Cones", &m_showCones);
+  });
+  
+  // Markers section
+  m_leftPanel.addSection("Markers", [this]() {
+    std::vector<std::string> namespaces = m_markerSystem.getNamespaces();
+    
+    if (namespaces.empty()) {
+      ImGui::TextDisabled("No markers");
+      return;
+    }
+    
+    for (const std::string& ns : namespaces) {
+      // Namespace header with visibility checkbox
+      bool nsVisible = m_markerSystem.isNamespaceVisible(ns);
+      if (ImGui::Checkbox(("##ns_" + ns).c_str(), &nsVisible)) {
+        m_markerSystem.setNamespaceVisible(ns, nsVisible);
+      }
+      ImGui::SameLine();
+      
+      // Collapsible tree node for namespace
+      ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen;
+      if (ImGui::TreeNodeEx(ns.c_str(), flags)) {
+        // Show individual markers
+        std::vector<int> ids = m_markerSystem.getMarkerIds(ns);
+        for (int id : ids) {
+          ImGui::Indent(20.0f);
+          bool markerVisible = m_markerSystem.isMarkerVisible(ns, id);
+          std::string label = "ID " + std::to_string(id);
+          if (ImGui::Checkbox(label.c_str(), &markerVisible)) {
+            m_markerSystem.setMarkerVisible(ns, id, markerVisible);
+          }
+          ImGui::Unindent(20.0f);
+        }
+        ImGui::TreePop();
+      }
+    }
+  });
+  
+  // === Admin Panel (Right) ===
+  
   // Simulation Control section
   m_rightPanel.addSection("Simulation Control", [this]() {
     bool isPaused = m_simulator.isPaused();
@@ -742,6 +806,57 @@ void Application::setupPanels() {
     if (ImGui::Button("Reset", ImVec2(-1, 30))) {
       m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiDeltaMax, m_uiDt);
     }
+  });
+
+  // Communication section
+  m_rightPanel.addSection("Communication", [this]() {
+    bool commEnabled = m_simulator.isCommEnabled();
+    
+    // Enable/Disable toggle
+    if (ImGui::Checkbox("Enable ZMQ", &commEnabled)) {
+      m_simulator.enableComm(commEnabled);
+    }
+    
+    // Status indicator
+    ImGui::SameLine();
+    if (commEnabled) {
+      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "● Connected");
+    } else {
+      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "● Disconnected");
+    }
+    
+    ImGui::Separator();
+    
+    // Mode selection (sync/async)
+    bool syncMode = m_simulator.isSyncMode();
+    if (ImGui::RadioButton("Asynchronous", !syncMode)) {
+      m_simulator.setSyncMode(false);
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Synchronous", syncMode)) {
+      m_simulator.setSyncMode(true);
+    }
+    
+    // Control period (only for sync mode)
+    if (syncMode) {
+      ImGui::Spacing();
+      ImGui::Text("Control period:");
+      int controlPeriod = static_cast<int>(m_simulator.getControlPeriod());
+      ImGui::SetNextItemWidth(-1);
+      if (ImGui::InputInt("##control_period", &controlPeriod, 1, 10)) {
+        controlPeriod = std::max(1, controlPeriod);
+        m_simulator.setControlPeriod(static_cast<uint32_t>(controlPeriod));
+      }
+      ImGui::TextDisabled("Request control every K ticks");
+    }
+    
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::TextDisabled("Ports:");
+    ImGui::TextDisabled(" State: 5556 (PUB)");
+    ImGui::TextDisabled(" Control: 5557 (REQ)");
+    ImGui::TextDisabled(" Admin: 5558 (REP)");
+    ImGui::TextDisabled(" Markers: 5560 (SUB)");
   });
 
   // Parameters section
@@ -863,6 +978,19 @@ void Application::setupPanels() {
               if (trackData.startPose.has_value()) {
                 m_simulator.setStartPose(trackData.startPose.value());
               }
+              
+              // Add midline marker if midpoints are available
+              if (!trackData.midpoints.empty()) {
+                uint64_t tick = m_sceneDB.tick.load();
+                double simTime = tick * m_simulator.getDt();
+                Marker midlineMarker;
+                midlineMarker.type = MarkerType::LineStrip;
+                midlineMarker.points = trackData.midpoints;
+                midlineMarker.color = Color(255, 255, 0, 255); // Yellow
+                midlineMarker.scale = Scale2D(0.05f); // Line width
+                // No TTL - persists until replaced
+                m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
+              }
             }
           }
         }
@@ -886,6 +1014,19 @@ void Application::setupPanels() {
           m_simulator.setCones(trackData.cones);
           if (trackData.startPose.has_value()) {
             m_simulator.setStartPose(trackData.startPose.value());
+          }
+          
+          // Add midline marker if midpoints are available
+          if (!trackData.midpoints.empty()) {
+            uint64_t tick = m_sceneDB.tick.load();
+            double simTime = tick * m_simulator.getDt();
+            Marker midlineMarker;
+            midlineMarker.type = MarkerType::LineStrip;
+            midlineMarker.points = trackData.midpoints;
+            midlineMarker.color = Color(255, 255, 0, 255); // Yellow
+            midlineMarker.scale = Scale2D(0.05f); // Line width
+            // No TTL - persists until replaced
+            m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
           }
         }
       }
@@ -926,15 +1067,105 @@ void Application::setupPanels() {
 }
 
 /**
- * @brief Renders the 2D simulation scene and admin panel.
+ * @brief Renders the 2D simulation scene and panels.
  */
 void Application::render2D() {
-  // Draw right panel
+  // Poll for markers from ZMQ (if subscriber is active)
+  if (m_markerSub && m_markerSub->isRunning()) {
+    auto markerArray = m_markerSub->pollMarkers();
+    if (markerArray.has_value()) {
+      const scene::Scene& scene = m_sceneDB.snapshot();
+      uint64_t tick = m_sceneDB.tick.load();
+      double simTime = tick * m_simulator.getDt();
+
+      // Add/update markers from the array
+      for (const auto& protoMarker : markerArray->markers()) {
+        Marker marker;
+        
+        // Convert proto marker to internal marker
+        switch (protoMarker.type()) {
+          case lilsim::MarkerType::TEXT:
+            marker.type = MarkerType::Text;
+            break;
+          case lilsim::MarkerType::ARROW:
+            marker.type = MarkerType::Arrow;
+            break;
+          case lilsim::MarkerType::RECTANGLE:
+            marker.type = MarkerType::Rectangle;
+            break;
+          case lilsim::MarkerType::CIRCLE:
+            marker.type = MarkerType::Circle;
+            break;
+          case lilsim::MarkerType::LINE_LIST:
+            marker.type = MarkerType::LineList;
+            break;
+          case lilsim::MarkerType::LINE_STRIP:
+            marker.type = MarkerType::LineStrip;
+            break;
+          case lilsim::MarkerType::RECTANGLE_LIST:
+            marker.type = MarkerType::RectangleList;
+            break;
+          case lilsim::MarkerType::CIRCLE_LIST:
+            marker.type = MarkerType::CircleList;
+            break;
+          case lilsim::MarkerType::POINTS:
+            marker.type = MarkerType::Points;
+            break;
+          case lilsim::MarkerType::TRIANGLE_LIST:
+            marker.type = MarkerType::TriangleList;
+            break;
+          case lilsim::MarkerType::MESH_2D:
+            marker.type = MarkerType::Mesh2D;
+            break;
+          default:
+            marker.type = MarkerType::Circle;
+            break;
+        }
+        
+        marker.pose = common::SE2(protoMarker.pose().x(), 
+                                   protoMarker.pose().y(), 
+                                   protoMarker.pose().yaw());
+        marker.color = Color(protoMarker.color().r(), 
+                            protoMarker.color().g(), 
+                            protoMarker.color().b(), 
+                            protoMarker.color().a());
+        marker.scale = Scale2D(protoMarker.scale().x(), protoMarker.scale().y());
+        marker.text = protoMarker.text();
+        marker.visible = protoMarker.visible();
+        
+        // Convert points
+        for (const auto& pt : protoMarker.points()) {
+          marker.points.emplace_back(pt.x(), pt.y(), pt.yaw());
+        }
+        
+        // Set TTL
+        if (protoMarker.ttl_sec() > 0.0) {
+          marker.ttl_sec = protoMarker.ttl_sec();
+        }
+        
+        m_markerSystem.addMarker(protoMarker.ns(), protoMarker.id(), marker, simTime);
+      }
+    }
+  }
+
+  // Update marker system (handle TTL)
+  const scene::Scene& scene = m_sceneDB.snapshot();
+  uint64_t tick = m_sceneDB.tick.load();
+  double simTime = tick * m_simulator.getDt();
+  m_markerSystem.update(simTime);
+  
+  // Draw left panel (Display)
+  m_leftPanel.draw(m_width, m_height);
+  
+  // Draw right panel (Admin)
   m_rightPanel.draw(m_width, m_height);
 
-  // Draw viewport (fill remaining space)
+  // Draw viewport (fill remaining space between panels)
+  float leftPanelWidth = m_leftPanel.getWidth();
   float rightPanelWidth = m_rightPanel.getWidth();
-  m_viewportPanel.draw(0, 0, (float)m_width - rightPanelWidth, (float)m_height);
+  m_viewportPanel.draw(leftPanelWidth, 0, 
+                       (float)m_width - leftPanelWidth - rightPanelWidth, 
+                       (float)m_height);
 }
 
 /**

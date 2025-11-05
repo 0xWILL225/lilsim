@@ -15,10 +15,15 @@
 #include <webgpu/webgpu.h>
 
 #include "CarDefaults.hpp"
+#include "MarkerSystem.hpp"
 #include "panels/SidePanel.hpp"
 #include "panels/ViewportPanel.hpp"
 #include "scene.hpp"
 #include "simulator.hpp"
+
+namespace comm {
+  class MarkerSubscriber;
+}
 
 namespace viz {
 
@@ -37,6 +42,7 @@ namespace viz {
 class Application {
 public:
   Application(scene::SceneDB& db, sim::Simulator& sim);
+  ~Application(); // Defined in .cpp to handle unique_ptr with forward-declared type
 
   bool initialize();
   void terminate();
@@ -47,6 +53,15 @@ public:
   // Public for callback access
   ViewportPanel m_viewportPanel;
   SidePanel m_rightPanel;
+  SidePanel m_leftPanel;
+  MarkerSystem m_markerSystem;
+  
+  // Simulated object visibility
+  bool m_showCar{true};
+  bool m_showCones{true};
+
+  // Communication
+  std::unique_ptr<comm::MarkerSubscriber> m_markerSub;
 
 private:
   // References to scene and simulator

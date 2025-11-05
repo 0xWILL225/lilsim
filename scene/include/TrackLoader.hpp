@@ -14,6 +14,7 @@ namespace scene {
 struct TrackData {
   std::vector<Cone> cones;
   std::optional<common::SE2> startPose; // Starting pose if car_start is present
+  std::vector<common::SE2> midpoints;   // Midpoint positions (for midline visualization)
 };
 
 /**

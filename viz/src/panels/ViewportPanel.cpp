@@ -1,5 +1,6 @@
 #include "panels/ViewportPanel.hpp"
 #include "KeyBindings.hpp"
+#include "MarkerSystem.hpp"
 #include <imgui.h>
 #include <cmath>
 
@@ -100,71 +101,120 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
     draw_list->AddLine(p3, p4, grid_color, 1.0f);
   }
 
-  // Draw car as triangle
-  const float car_length = (float)car.wheelbase;
-  const float car_width = 1.0f;
-
-  // Triangle vertices in car local frame (+X forward, +Y left)
-  ImVec2 v1 = worldToScreen(car_x + car_length * 0.5f * std::cos(car_yaw),
-                            car_y + car_length * 0.5f * std::sin(car_yaw));
-  ImVec2 v2 = worldToScreen(
-    car_x
-      + (-car_length * 0.5f * std::cos(car_yaw)
-         + car_width * 0.5f * std::cos(car_yaw + (float)M_PI_2)),
-    car_y
-      + (-car_length * 0.5f * std::sin(car_yaw)
-         + car_width * 0.5f * std::sin(car_yaw + (float)M_PI_2)));
-  ImVec2 v3 = worldToScreen(
-    car_x
-      + (-car_length * 0.5f * std::cos(car_yaw)
-         - car_width * 0.5f * std::cos(car_yaw + (float)M_PI_2)),
-    car_y
-      + (-car_length * 0.5f * std::sin(car_yaw)
-         - car_width * 0.5f * std::sin(car_yaw + (float)M_PI_2)));
-
-  ImU32 car_color = IM_COL32(255, 100, 100, 255);
-  draw_list->AddTriangleFilled(v1, v2, v3, car_color);
-  draw_list->AddTriangle(v1, v2, v3, IM_COL32(200, 50, 50, 255), 2.0f);
 
   // Draw cones
-  for (const auto& cone : scene.cones) {
-    ImVec2 center = worldToScreen((float)cone.x, (float)cone.y);
+  if (m_showCones && *m_showCones) {
+    for (const auto& cone : scene.cones) {
+      ImVec2 center = worldToScreen((float)cone.x, (float)cone.y);
 
-    // Cone dimensions and colors based on type
-    float base_radius, stripe_radius, top_radius;
-    ImU32 base_color, stripe_color;
+      // Cone dimensions and colors based on type
+      float base_radius, stripe_radius, top_radius;
+      ImU32 base_color, stripe_color;
 
-    if (cone.type == scene::ConeType::BigOrange) {
-      // Large orange cone: 0.50m diameter = 0.25m radius
-      base_radius = 0.25f;
-      stripe_radius = 0.16f;
-      top_radius = 0.08f;
-      base_color = IM_COL32(255, 140, 0, 255);     // Orange
-      stripe_color = IM_COL32(255, 255, 255, 255); // White stripe
-    } else {
-      // Standard cones: 0.35m diameter = 0.175m radius
-      base_radius = 0.175f;
-      stripe_radius = 0.1f;
-      top_radius = 0.06f;
-
-      if (cone.type == scene::ConeType::Blue) {
-        base_color = IM_COL32(50, 100, 255, 255);    // Blue
-        stripe_color = IM_COL32(255, 255, 255, 255); // White stripe
-      } else if (cone.type == scene::ConeType::Yellow) {
-        base_color = IM_COL32(255, 220, 0, 255);  // Yellow
-        stripe_color = IM_COL32(50, 50, 50, 255); // Black stripe
-      } else { // Orange
+      if (cone.type == scene::ConeType::BigOrange) {
+        // Large orange cone: 0.50m diameter = 0.25m radius
+        base_radius = 0.25f;
+        stripe_radius = 0.16f;
+        top_radius = 0.08f;
         base_color = IM_COL32(255, 140, 0, 255);     // Orange
         stripe_color = IM_COL32(255, 255, 255, 255); // White stripe
+      } else {
+        // Standard cones: 0.35m diameter = 0.175m radius
+        base_radius = 0.175f;
+        stripe_radius = 0.1f;
+        top_radius = 0.06f;
+
+        if (cone.type == scene::ConeType::Blue) {
+          base_color = IM_COL32(50, 100, 255, 255);    // Blue
+          stripe_color = IM_COL32(255, 255, 255, 255); // White stripe
+        } else if (cone.type == scene::ConeType::Yellow) {
+          base_color = IM_COL32(255, 220, 0, 255);  // Yellow
+          stripe_color = IM_COL32(50, 50, 50, 255); // Black stripe
+        } else { // Orange
+          base_color = IM_COL32(255, 140, 0, 255);     // Orange
+          stripe_color = IM_COL32(255, 255, 255, 255); // White stripe
+        }
+      }
+
+      // Draw three circles (largest to smallest)
+      draw_list->AddCircleFilled(center, base_radius * cam_zoom, base_color, 16);
+      draw_list->AddCircleFilled(center, stripe_radius * cam_zoom, stripe_color,
+                                12);
+      draw_list->AddCircleFilled(center, top_radius * cam_zoom, base_color, 8);
+    }
+  }
+
+  // Draw markers
+  if (m_markerSystem) {
+    const auto& markers = m_markerSystem->getMarkers();
+    for (const auto& [key, marker] : markers) {
+      // Check visibility
+      if (!m_markerSystem->isMarkerVisible(key.ns, key.id)) {
+        continue;
+      }
+
+      // Convert marker color
+      ImU32 markerColor = IM_COL32(marker.color.r, marker.color.g, 
+                                     marker.color.b, marker.color.a);
+
+      // Render based on marker type
+      switch (marker.type) {
+        case MarkerType::LineStrip:
+          if (marker.points.size() >= 2) {
+            for (size_t i = 0; i < marker.points.size() - 1; ++i) {
+              const auto& p1 = marker.points[i];
+              const auto& p2 = marker.points[i + 1];
+              ImVec2 screen1 = worldToScreen((float)p1.x(), (float)p1.y());
+              ImVec2 screen2 = worldToScreen((float)p2.x(), (float)p2.y());
+              float lineWidth = marker.scale.x * cam_zoom;
+              draw_list->AddLine(screen1, screen2, markerColor, lineWidth);
+            }
+          }
+          break;
+
+        case MarkerType::Circle: {
+          ImVec2 center = worldToScreen((float)marker.pose.x(), 
+                                        (float)marker.pose.y());
+          float radius = marker.scale.x * cam_zoom;
+          draw_list->AddCircleFilled(center, radius, markerColor, 32);
+          break;
+        }
+
+        // Other marker types can be added here as needed
+        default:
+          break;
       }
     }
-
-    // Draw three circles (largest to smallest)
-    draw_list->AddCircleFilled(center, base_radius * cam_zoom, base_color, 16);
-    draw_list->AddCircleFilled(center, stripe_radius * cam_zoom, stripe_color,
-                               12);
-    draw_list->AddCircleFilled(center, top_radius * cam_zoom, base_color, 8);
   }
+
+  // Draw car as triangle (if visible)
+  if (m_showCar && *m_showCar) {
+    const float car_length = (float)car.wheelbase;
+    const float car_width = 1.0f;
+
+    // Triangle vertices in car local frame (+X forward, +Y left)
+    ImVec2 v1 = worldToScreen(car_x + car_length * 0.5f * std::cos(car_yaw),
+                              car_y + car_length * 0.5f * std::sin(car_yaw));
+    ImVec2 v2 = worldToScreen(
+      car_x
+        + (-car_length * 0.5f * std::cos(car_yaw)
+            + car_width * 0.5f * std::cos(car_yaw + (float)M_PI_2)),
+      car_y
+        + (-car_length * 0.5f * std::sin(car_yaw)
+            + car_width * 0.5f * std::sin(car_yaw + (float)M_PI_2)));
+    ImVec2 v3 = worldToScreen(
+      car_x
+        + (-car_length * 0.5f * std::cos(car_yaw)
+            - car_width * 0.5f * std::cos(car_yaw + (float)M_PI_2)),
+      car_y
+        + (-car_length * 0.5f * std::sin(car_yaw)
+            - car_width * 0.5f * std::sin(car_yaw + (float)M_PI_2)));
+
+    ImU32 car_color = IM_COL32(255, 100, 100, 255);
+    draw_list->AddTriangleFilled(v1, v2, v3, car_color);
+    draw_list->AddTriangle(v1, v2, v3, IM_COL32(200, 50, 50, 255), 2.0f);
+  }
+  
 
   ImGui::End();
   ImGui::PopStyleVar();

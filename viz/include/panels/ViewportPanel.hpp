@@ -5,6 +5,8 @@
 
 namespace viz {
 
+class MarkerSystem;  // Forward declaration
+
 /**
  * @brief Renders the 2D simulation scene with camera controls.
  *
@@ -19,8 +21,12 @@ class ViewportPanel {
 public:
   enum class CameraMode { Free, CarFollow };
 
-  explicit ViewportPanel(scene::SceneDB& sceneDB)
-    : m_sceneDB(sceneDB) {
+  ViewportPanel(scene::SceneDB& sceneDB, const MarkerSystem* markerSystem = nullptr,
+                const bool* showCar = nullptr, const bool* showCones = nullptr)
+    : m_sceneDB(sceneDB)
+    , m_markerSystem(markerSystem)
+    , m_showCar(showCar)
+    , m_showCones(showCones) {
   }
 
   /**
@@ -56,7 +62,10 @@ public:
 
 private:
   scene::SceneDB& m_sceneDB;
-
+  const MarkerSystem* m_markerSystem;  // Read-only access to markers
+  const bool* m_showCar;               // Read-only access to car visibility
+  const bool* m_showCones;             // Read-only access to cones visibility
+  
   // Mouse state for panning
   bool m_mouseLeftPressed = false;
   float m_lastMouseX = 0.0f;

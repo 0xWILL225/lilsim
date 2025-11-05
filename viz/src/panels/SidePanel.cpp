@@ -28,39 +28,7 @@ void SidePanel::draw(int windowWidth, int windowHeight) {
       m_collapsed = false;
     }
   } else {
-    // Resize handle (invisible button on edge)
-    float resizeHandleX = (m_side == Side::Left) ? (currentWidth - 5.0f) : 0.0f;
-    ImGui::SetCursorPos(ImVec2(resizeHandleX, 0));
-    ImGui::InvisibleButton("##resize", ImVec2(5, (float)windowHeight));
-
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    }
-
-    if (ImGui::IsItemActive()) {
-      m_resizing = true;
-    }
-
-    if (m_resizing) {
-      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-      if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        // Use ImGui's mouse position instead of GLFW to avoid null window issues
-        ImVec2 mousePos = ImGui::GetMousePos();
-        float mouseX = mousePos.x;
-
-        if (m_side == Side::Left) {
-          m_width = std::clamp(mouseX, m_minWidth, m_maxWidth);
-        } else {
-          m_width = std::clamp((float)(windowWidth - mouseX), m_minWidth,
-                               m_maxWidth);
-        }
-      } else {
-        m_resizing = false;
-      }
-    }
-
     // Collapse button and header
-    ImGui::SetCursorPos(ImVec2(10, 5));
     const char* collapseLabel = (m_side == Side::Left) ? "<" : ">";
     if (ImGui::Button(collapseLabel, ImVec2(20, 20))) {
       m_collapsed = true;
@@ -79,6 +47,38 @@ void SidePanel::draw(int windowWidth, int windowHeight) {
         section.drawContent();
       } else {
         section.expanded = false;
+      }
+    }
+  }
+
+  // Handle resizing (manual check for mouse at edge)
+  if (!m_collapsed) {
+    ImVec2 mousePos = ImGui::GetMousePos();
+    float edgeX = (m_side == Side::Left) ? (xPos + currentWidth) : xPos;
+    float distToEdge = std::abs(mousePos.x - edgeX);
+    
+    // Check if mouse is near the resize edge
+    if (distToEdge < 5.0f && mousePos.y >= 0 && mousePos.y <= windowHeight) {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+      
+      if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        m_resizing = true;
+      }
+    }
+    
+    if (m_resizing) {
+      ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+      if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        float mouseX = mousePos.x;
+        
+        if (m_side == Side::Left) {
+          m_width = std::clamp(mouseX - xPos, m_minWidth, m_maxWidth);
+        } else {
+          m_width = std::clamp((float)(windowWidth - mouseX), m_minWidth,
+                               m_maxWidth);
+        }
+      } else {
+        m_resizing = false;
       }
     }
   }

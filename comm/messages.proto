@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package lilsim;
+
+// Common header on almost everything
+message Header {
+  uint64 tick      = 1;
+  double sim_time  = 2;  // seconds
+  uint32 version   = 3;  // protocol version
+}
+
+message Vec2 {
+  double x = 1;
+  double y = 2;
+}
+
+message CarState {
+  Vec2   pos      = 1;  // world
+  double yaw      = 2;  // rad
+  double v        = 3;  // m/s
+  double yaw_rate = 4;  // rad/s
+}
+
+message SceneState {
+  Header   header = 1;
+  CarState car    = 2;
+  // repeated Cone cones = 3; // later
+}
+
+// ============ State stream ============
+
+message StateUpdate {
+  SceneState scene = 1;
+}
+
+// ============ Control sync ============
+
+message ControlRequest {
+  Header header = 1;
+  SceneState scene = 2; // Include current state for client convenience
+}
+
+message ControlReply {
+  Header header      = 1; // tick this control applies to
+  double steer_angle = 2; // [rad], bicycle front wheel
+  double ax          = 3; // [m/s^2]
+}
+
+// ============ Admin RPC ============
+
+enum AdminCommandType {
+  INIT  = 0;
+  RESET = 1;
+  PAUSE = 2;
+  RUN   = 3;
+  STEP  = 4;
+  SET_PARAMS = 5;
+  SET_MODE = 6;  // Set sync/async mode
+}
+
+message SimParams {
+  double dt         = 1;
+  double wheelbase  = 2;
+  double v_max      = 3;
+  double delta_max  = 4;
+  double Lf         = 5;
+}
+
+message AdminCommand {
+  Header           header     = 1;
+  AdminCommandType type       = 2;
+  uint64           step_count = 3;  // for STEP
+  SimParams        params     = 4;  // for SET_PARAMS/INIT
+  bool             sync_mode  = 5;  // for SET_MODE
+  uint32           control_period = 6; // K ticks between control requests (sync mode)
+}
+
+message AdminReply {
+  Header header  = 1;
+  bool   success = 2;
+  string message = 3;
+}
+
+// ============ Marker visualization ============
+
+message Color {
+  uint32 r = 1; // 0-255
+  uint32 g = 2;
+  uint32 b = 3;
+  uint32 a = 4;
+}
+
+message Scale2D {
+  float x = 1;
+  float y = 2;
+}
+
+message SE2 {
+  double x   = 1;
+  double y   = 2;
+  double yaw = 3;
+}
+
+enum MarkerType {
+  TEXT          = 0;
+  ARROW         = 1;
+  RECTANGLE     = 2;
+  CIRCLE        = 3;
+  LINE_LIST     = 4;
+  LINE_STRIP    = 5;
+  RECTANGLE_LIST = 6;
+  CIRCLE_LIST   = 7;
+  POINTS        = 8;
+  TRIANGLE_LIST = 9;
+  MESH_2D       = 10;
+}
+
+message Marker {
+  string     ns         = 1;  // namespace
+  int32      id         = 2;  // unique within namespace
+  MarkerType type       = 3;
+  SE2        pose       = 4;
+  Color      color      = 5;
+  Scale2D    scale      = 6;
+  string     text       = 7;  // For TEXT markers
+  repeated SE2 points   = 8;  // For LINE_LIST, LINE_STRIP, POINTS
+  double     ttl_sec    = 9;  // Time-to-live (0 = infinite)
+  bool       visible    = 10; // Visibility flag
+}
+
+message MarkerArray {
+  Header header = 1;
+  repeated Marker markers = 2;
+}

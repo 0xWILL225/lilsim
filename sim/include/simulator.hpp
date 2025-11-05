@@ -2,10 +2,15 @@
 #include <atomic>
 #include <thread>
 #include <optional>
+#include <memory>
 
 #include "CarDefaults.hpp"
 #include "scene.hpp"
 #include "SE2.hpp"
+
+namespace comm {
+  class CommServer;
+}
 
 namespace sim {
 
@@ -16,12 +21,8 @@ struct CarInput {
 
 class Simulator {
 public:
-  explicit Simulator(scene::SceneDB& db)
-    : m_db(db) {
-  }
-  ~Simulator() {
-    stop();
-  }
+  explicit Simulator(scene::SceneDB& db); // Defined in .cpp to handle unique_ptr with forward-declared type
+  ~Simulator(); // Defined in .cpp to handle unique_ptr with forward-declared type
 
   void start(double dt);
   void stop();
@@ -62,6 +63,24 @@ public:
     m_newStartPose = pose;
   }
 
+  // Communication
+  void enableComm(bool enable);
+  bool isCommEnabled() const {
+    return m_commEnabled.load(std::memory_order_relaxed);
+  }
+  void setSyncMode(bool sync) {
+    m_syncMode.store(sync, std::memory_order_relaxed);
+  }
+  bool isSyncMode() const {
+    return m_syncMode.load(std::memory_order_relaxed);
+  }
+  void setControlPeriod(uint32_t period) {
+    m_controlPeriod.store(period, std::memory_order_relaxed);
+  }
+  uint32_t getControlPeriod() const {
+    return m_controlPeriod.load(std::memory_order_relaxed);
+  }
+
 private:
   void loop(double dt);
 
@@ -87,6 +106,13 @@ private:
   std::vector<scene::Cone> m_newCones;
   common::SE2 m_newStartPose{0.0, 0.0, 0.0};
   common::SE2 m_startPose{0.0, 0.0, 0.0}; // Current starting pose
+
+  // Communication
+  std::unique_ptr<comm::CommServer> m_commServer;
+  std::atomic<bool> m_commEnabled{false};
+  std::atomic<bool> m_syncMode{false};      // true = synchronous, false = asynchronous
+  std::atomic<uint32_t> m_controlPeriod{10}; // Control request every K ticks (sync mode)
+  CarInput m_lastControlInput{0.0, 0.0};    // Last control from client (async mode)
 };
 
 } // namespace sim

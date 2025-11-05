@@ -27,6 +27,7 @@ bool TrackLoader::loadFromCSV(const std::string& filepath, TrackData& outTrackDa
 
   outTrackData.cones.clear();
   outTrackData.startPose.reset();
+  outTrackData.midpoints.clear();
 
   std::string line;
   bool firstLine = true;
@@ -73,8 +74,8 @@ bool TrackLoader::loadFromCSV(const std::string& filepath, TrackData& outTrackDa
         // Store starting pose
         outTrackData.startPose = common::SE2(x, y, yaw);
       } else if (tag == "midpoint") {
-        // Skip midpoints
-        continue;
+        // Store midpoints for midline visualization
+        outTrackData.midpoints.emplace_back(x, y, yaw);
       } else {
         // It's a cone
         ConeType type = parseConeType(tag);
