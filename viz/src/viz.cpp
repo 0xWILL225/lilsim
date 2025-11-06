@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <algorithm>
+#include <chrono>
+#include <thread>
 
 // Undefine X11 macros that conflict with other headers
 #ifdef Success
@@ -343,7 +345,7 @@ bool Application::initWebGPU() {
   config.usage = WGPUTextureUsage_RenderAttachment;
   config.width = static_cast<uint32_t>(m_width);
   config.height = static_cast<uint32_t>(m_height);
-  config.presentMode = WGPUPresentMode_Fifo;
+  config.presentMode = WGPUPresentMode_Immediate; // Disable VSync for manual frame rate control
   config.alphaMode = WGPUCompositeAlphaMode_Auto;
 
   wgpuSurfaceConfigure(m_surface, &config);
@@ -428,21 +430,23 @@ bool Application::initialize() {
  * This method should be called repeatedly in the main application loop.
  */
 void Application::mainLoop() {
+  // Frame rate limiting
+  double currentTime = glfwGetTime();
+  double deltaTime = currentTime - m_lastFrameTime;
+  
+  if (deltaTime < m_targetFrameTime) {
+    // Sleep for the remaining time to reach target FPS
+    double sleepTime = m_targetFrameTime - deltaTime;
+    std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
+    currentTime = glfwGetTime();
+  }
+  
+  m_lastFrameTime = currentTime;
+
   glfwPollEvents();
   handleInput();
 
-  // Start ImGui frame
-  ImGui_ImplWGPU_NewFrame();
-  ImGui_ImplGlfw_NewFrame();
-  ImGui::NewFrame();
-
-  // Render 2D scene
-  render2D();
-
-  // Render ImGui
-  ImGui::Render();
-
-  // Get current texture from m_surface
+  // Get current texture from m_surface BEFORE starting ImGui frame
   WGPUSurfaceTexture m_surfaceTexture = {};
   wgpuSurfaceGetCurrentTexture(m_surface, &m_surfaceTexture);
 
@@ -463,6 +467,23 @@ void Application::mainLoop() {
     }
     return; // Skip this frame
   }
+
+  // Start ImGui frame (only after surface is confirmed valid)
+  ImGui_ImplWGPU_NewFrame();
+  ImGui_ImplGlfw_NewFrame();
+  
+  // CRITICAL FIX: Override ImGui's display size to match actual surface dimensions
+  // This prevents scissor rect validation errors during rapid window resizing
+  ImGuiIO& io = ImGui::GetIO();
+  io.DisplaySize = ImVec2((float)m_width, (float)m_height);
+  
+  ImGui::NewFrame();
+
+  // Render 2D scene
+  render2D();
+
+  // Render ImGui
+  ImGui::Render();
 
   if (m_surfaceTexture.status
         != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal
@@ -646,7 +667,7 @@ void Application::onResize(int newWidth, int newHeight) {
     config.usage = WGPUTextureUsage_RenderAttachment;
     config.width = static_cast<uint32_t>(m_width);
     config.height = static_cast<uint32_t>(m_height);
-    config.presentMode = WGPUPresentMode_Fifo;
+    config.presentMode = WGPUPresentMode_Immediate; // Disable VSync for manual frame rate control
     config.alphaMode = WGPUCompositeAlphaMode_Auto;
 
     wgpuSurfaceConfigure(m_surface, &config);
@@ -689,35 +710,38 @@ void Application::handleInput() {
   }
   resetKeyWasPressed = resetKeyPressed;
 
-  // Update key states for car control using keybindings
-  m_keyW = glfwGetKey(m_window, gKeyBindings.carAccelerate) == GLFW_PRESS;
-  m_keyS = glfwGetKey(m_window, gKeyBindings.carBrake) == GLFW_PRESS;
-  m_keyA = glfwGetKey(m_window, gKeyBindings.carSteerLeft) == GLFW_PRESS;
-  m_keyD = glfwGetKey(m_window, gKeyBindings.carSteerRight) == GLFW_PRESS;
+  // Only allow WASD control when ZMQ is disabled
+  if (!m_simulator.isCommEnabled()) {
+    // Update key states for car control using keybindings
+    m_keyW = glfwGetKey(m_window, gKeyBindings.carAccelerate) == GLFW_PRESS;
+    m_keyS = glfwGetKey(m_window, gKeyBindings.carBrake) == GLFW_PRESS;
+    m_keyA = glfwGetKey(m_window, gKeyBindings.carSteerLeft) == GLFW_PRESS;
+    m_keyD = glfwGetKey(m_window, gKeyBindings.carSteerRight) == GLFW_PRESS;
 
-  // Construct control input
-  sim::CarInput input{};
+    // Construct control input
+    sim::CarInput input{};
 
-  // Acceleration:
-  const double accel = 7.0;
-  if (m_keyW)
-    input.ax = accel;
-  else if (m_keyS)
-    input.ax = -accel;
-  else
-    input.ax = 0.0;
+    // Acceleration:
+    const double accel = 7.0;
+    if (m_keyW)
+      input.ax = accel;
+    else if (m_keyS)
+      input.ax = -accel;
+    else
+      input.ax = 0.0;
 
-  // Steering: +0.5 rad left, -0.5 rad right
-  const double steer_angle = 0.5;
-  if (m_keyA)
-    input.delta = steer_angle;
-  else if (m_keyD)
-    input.delta = -steer_angle;
-  else
-    input.delta = 0.0;
+    // Steering: +0.5 rad left, -0.5 rad right
+    const double steer_angle = 0.5;
+    if (m_keyA)
+      input.delta = steer_angle;
+    else if (m_keyD)
+      input.delta = -steer_angle;
+    else
+      input.delta = 0.0;
 
-  // Send to simulator
-  m_simulator.setInput(input);
+    // Send to simulator
+    m_simulator.setInput(input);
+  }
 }
 
 /**
@@ -775,6 +799,25 @@ void Application::setupPanels() {
   // Simulation Control section
   m_rightPanel.addSection("Simulation Control", [this]() {
     bool isPaused = m_simulator.isPaused();
+    bool commEnabled = m_simulator.isCommEnabled();
+    bool syncMode = m_simulator.isSyncMode();
+    bool syncClientConnected = m_simulator.isSyncClientConnected();
+    
+    // Color the button: Green when paused (Resume), Red when running (Pause)
+    if (isPaused) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.6f, 0.0f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.8f, 0.0f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.5f, 0.0f, 1.0f));
+    } else {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.0f, 0.0f, 1.0f));
+    }
+    
+    // Disable button if in sync mode and no client connected
+    bool canResume = !isPaused || !commEnabled || !syncMode || syncClientConnected;
+    ImGui::BeginDisabled(isPaused && !canResume);
+    
     if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(140, 30))) {
       if (isPaused) {
         m_simulator.resume();
@@ -782,6 +825,9 @@ void Application::setupPanels() {
         m_simulator.pause();
       }
     }
+    
+    ImGui::EndDisabled();
+    ImGui::PopStyleColor(3);
 
     ImGui::SameLine();
     if (ImGui::Button("Step", ImVec2(70, 30))) {
@@ -811,52 +857,102 @@ void Application::setupPanels() {
   // Communication section
   m_rightPanel.addSection("Communication", [this]() {
     bool commEnabled = m_simulator.isCommEnabled();
+    bool syncMode = m_simulator.isSyncMode();
+    bool syncClientConnected = m_simulator.isSyncClientConnected();
     
     // Enable/Disable toggle
     if (ImGui::Checkbox("Enable ZMQ", &commEnabled)) {
       m_simulator.enableComm(commEnabled);
     }
     
-    // Status indicator
-    ImGui::SameLine();
+    ImGui::Separator();
+    ImGui::TextDisabled("Socket Status:");
+    
     if (commEnabled) {
-      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "● Connected");
+      float activeOpacity = 1.0f;
+      float inactiveOpacity = 0.3f;
+      
+      // State publisher - always active when enabled
+      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+      ImGui::SameLine();
+      ImGui::Text("State (5556): Publishing");
+      
+      // Async control socket (5559)
+      if (!syncMode) {
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+        ImGui::SameLine();
+        ImGui::Text("Control Async (5559): Listening");
+      } else {
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity), "●");
+        ImGui::SameLine();
+        ImGui::TextDisabled("Control Async (5559): Inactive");
+      }
+      
+      // Sync control socket (5557)
+      if (syncMode) {
+        if (syncClientConnected) {
+          ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+          ImGui::SameLine();
+          ImGui::Text("Control Sync (5557): Connected");
+        } else {
+          ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, activeOpacity), "●");
+          ImGui::SameLine();
+          ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Control Sync (5557): NO CLIENT");
+        }
+      } else {
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity), "●");
+        ImGui::SameLine();
+        ImGui::TextDisabled("Control Sync (5557): Inactive");
+      }
+      
+      // Admin socket - always listening
+      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+      ImGui::SameLine();
+      ImGui::Text("Admin (5558): Listening");
+      
+      // Markers
+      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+      ImGui::SameLine();
+      ImGui::Text("Markers (5560): Listening");
     } else {
-      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "● Disconnected");
+      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "●");
+      ImGui::SameLine();
+      ImGui::TextDisabled("All sockets: Disabled");
     }
     
     ImGui::Separator();
     
-    // Mode selection (sync/async)
-    bool syncMode = m_simulator.isSyncMode();
-    if (ImGui::RadioButton("Asynchronous", !syncMode)) {
-      m_simulator.setSyncMode(false);
+    // Mode selection (grayed out if not enabled, async selected when disabled)
+    ImGui::BeginDisabled(!commEnabled);
+    if (ImGui::RadioButton("Asynchronous", !syncMode || !commEnabled)) {
+      if (commEnabled) {
+        m_simulator.setSyncMode(false);
+      }
     }
     ImGui::SameLine();
-    if (ImGui::RadioButton("Synchronous", syncMode)) {
-      m_simulator.setSyncMode(true);
+    if (ImGui::RadioButton("Synchronous", syncMode && commEnabled)) {
+      if (commEnabled) {
+        m_simulator.setSyncMode(true);
+      }
     }
+    ImGui::EndDisabled();
     
     // Control period (only for sync mode)
-    if (syncMode) {
+    if (syncMode && commEnabled) {
       ImGui::Spacing();
-      ImGui::Text("Control period:");
-      int controlPeriod = static_cast<int>(m_simulator.getControlPeriod());
+      ImGui::Text("Control period (ms):");
+      int controlPeriodMs = static_cast<int>(m_simulator.getControlPeriodMs());
       ImGui::SetNextItemWidth(-1);
-      if (ImGui::InputInt("##control_period", &controlPeriod, 1, 10)) {
-        controlPeriod = std::max(1, controlPeriod);
-        m_simulator.setControlPeriod(static_cast<uint32_t>(controlPeriod));
+      if (ImGui::InputInt("##control_period_ms", &controlPeriodMs, 10, 100)) {
+        controlPeriodMs = std::max(10, controlPeriodMs);
+        m_simulator.setControlPeriodMs(static_cast<uint32_t>(controlPeriodMs));
+        // Update control tick period
+        double dt = m_simulator.getDt();
+        uint32_t ticks = static_cast<uint32_t>(std::max(1.0, controlPeriodMs / (dt * 1000.0)));
+        // Note: tick period will be computed by simulator on next update
       }
-      ImGui::TextDisabled("Request control every K ticks");
+      ImGui::TextDisabled("Milliseconds between requests");
     }
-    
-    ImGui::Spacing();
-    ImGui::Separator();
-    ImGui::TextDisabled("Ports:");
-    ImGui::TextDisabled(" State: 5556 (PUB)");
-    ImGui::TextDisabled(" Control: 5557 (REQ)");
-    ImGui::TextDisabled(" Admin: 5558 (REP)");
-    ImGui::TextDisabled(" Markers: 5560 (SUB)");
   });
 
   // Parameters section
@@ -1045,6 +1141,20 @@ void Application::setupPanels() {
     ImGui::Text("Velocity: %.2f m/s", car.v);
     ImGui::Text("Position: (%.1f, %.1f)", car.x(), car.y());
     ImGui::Text("Yaw: %.1f deg", car.yaw() * 180.0 / M_PI);
+    
+    // Communication status
+    if (m_simulator.isCommEnabled()) {
+      ImGui::Separator();
+      ImGui::Text("Communication:");
+      ImGui::Text("  Mode: %s", m_simulator.isSyncMode() ? "Synchronous" : "Asynchronous");
+      if (m_simulator.isSyncMode()) {
+        ImGui::Text("  Control period ticks: %u", m_simulator.getControlPeriodTicks());
+        ImGui::Text("  Client: %s", 
+                    m_simulator.isSyncClientConnected() ? "Connected" : "Disconnected");
+      }
+    }
+    
+    ImGui::Separator();
     ImGui::Text("Camera: %s",
                 m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free
                   ? "Free"
@@ -1059,7 +1169,11 @@ void Application::setupPanels() {
 
     ImGui::Separator();
     ImGui::Text("Controls:");
-    ImGui::BulletText("WASD: Drive car");
+    if (m_simulator.isCommEnabled()) {
+      ImGui::BulletText("WASD: Disabled (ZMQ enabled)");
+    } else {
+      ImGui::BulletText("WASD: Drive car");
+    }
     ImGui::BulletText("Space: Toggle camera");
     ImGui::BulletText("Mouse drag: Pan (free mode)");
     ImGui::BulletText("Scroll: Zoom");

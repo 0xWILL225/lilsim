@@ -74,12 +74,16 @@ public:
   bool isSyncMode() const {
     return m_syncMode.load(std::memory_order_relaxed);
   }
-  void setControlPeriod(uint32_t period) {
-    m_controlPeriod.store(period, std::memory_order_relaxed);
+  void setControlPeriodMs(uint32_t period_ms) {
+    m_controlPeriodMs.store(period_ms, std::memory_order_relaxed);
   }
-  uint32_t getControlPeriod() const {
-    return m_controlPeriod.load(std::memory_order_relaxed);
+  uint32_t getControlPeriodMs() const {
+    return m_controlPeriodMs.load(std::memory_order_relaxed);
   }
+  uint32_t getControlPeriodTicks() const {
+    return m_controlPeriodTicks.load(std::memory_order_relaxed);
+  }
+  bool isSyncClientConnected() const;
 
 private:
   void loop(double dt);
@@ -111,8 +115,9 @@ private:
   std::unique_ptr<comm::CommServer> m_commServer;
   std::atomic<bool> m_commEnabled{false};
   std::atomic<bool> m_syncMode{false};      // true = synchronous, false = asynchronous
-  std::atomic<uint32_t> m_controlPeriod{10}; // Control request every K ticks (sync mode)
-  CarInput m_lastControlInput{0.0, 0.0};    // Last control from client (async mode)
+  std::atomic<uint32_t> m_controlPeriodMs{100}; // Control period in milliseconds (sync mode)
+  std::atomic<uint32_t> m_controlPeriodTicks{10}; // Control period in ticks (computed from ms and dt)
+  CarInput m_lastControlInput{0.0, 0.0};    // Last control from client
 };
 
 } // namespace sim

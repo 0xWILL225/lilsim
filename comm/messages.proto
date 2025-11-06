@@ -33,6 +33,14 @@ message StateUpdate {
   SceneState scene = 1;
 }
 
+// ============ Control async ============
+
+message ControlAsync {
+  Header header      = 1;
+  double steer_angle = 2; // [rad], bicycle front wheel
+  double ax          = 3; // [m/s^2]
+}
+
 // ============ Control sync ============
 
 message ControlRequest {
@@ -72,7 +80,7 @@ message AdminCommand {
   uint64           step_count = 3;  // for STEP
   SimParams        params     = 4;  // for SET_PARAMS/INIT
   bool             sync_mode  = 5;  // for SET_MODE
-  uint32           control_period = 6; // K ticks between control requests (sync mode)
+  uint32           control_period_ms = 6; // milliseconds between control requests (sync mode)
 }
 
 message AdminReply {

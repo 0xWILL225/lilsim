@@ -91,14 +91,36 @@ public:
     return m_adminCommandPending.load(std::memory_order_relaxed); 
   }
 
+  /**
+   * @brief Poll for async control (non-blocking)
+   * @return ControlAsync if one is pending, std::nullopt otherwise
+   */
+  std::optional<lilsim::ControlAsync> pollAsyncControl();
+
+  /**
+   * @brief Check if sync client is connected
+   */
+  bool isSyncClientConnected() const {
+    return m_syncClientConnected.load(std::memory_order_relaxed);
+  }
+
+  /**
+   * @brief Set sync client connection state
+   */
+  void setSyncClientConnected(bool connected) {
+    m_syncClientConnected.store(connected, std::memory_order_relaxed);
+  }
+
 private:
   std::unique_ptr<zmq::context_t> m_context;
   std::unique_ptr<zmq::socket_t> m_statePub;      // PUB socket for state updates
-  std::unique_ptr<zmq::socket_t> m_controlReq;    // REQ socket for control requests
+  std::unique_ptr<zmq::socket_t> m_controlReq;    // REQ socket for control requests (sync)
+  std::unique_ptr<zmq::socket_t> m_controlAsyncSub; // SUB socket for async control
   std::unique_ptr<zmq::socket_t> m_adminRep;      // REP socket for admin commands
   
   std::atomic<bool> m_running{false};
   std::atomic<bool> m_adminCommandPending{false};
+  std::atomic<bool> m_syncClientConnected{false};
 };
 
 /**

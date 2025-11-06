@@ -34,6 +34,10 @@ void Simulator::stop() {
   }
 }
 
+bool Simulator::isSyncClientConnected() const {
+  return m_commServer && m_commServer->isSyncClientConnected();
+}
+
 void Simulator::enableComm(bool enable) {
   if (enable && !m_commEnabled.load(std::memory_order_relaxed)) {
     // Start communication
@@ -42,6 +46,10 @@ void Simulator::enableComm(bool enable) {
     }
     if (m_commServer->start()) {
       m_commEnabled.store(true, std::memory_order_relaxed);
+      // Reset control input to zero when ZMQ is enabled
+      m_lastControlInput = CarInput{0.0, 0.0};
+      // Reset sync mode to async
+      m_syncMode.store(false, std::memory_order_relaxed);
       spdlog::info("[sim] Communication enabled");
     } else {
       spdlog::error("[sim] Failed to start communication server");
@@ -158,8 +166,15 @@ void Simulator::loop(double dt) {
 
           case lilsim::AdminCommandType::SET_MODE:
             setSyncMode(cmd.sync_mode());
-            if (cmd.control_period() > 0) {
-              setControlPeriod(cmd.control_period());
+            if (cmd.control_period_ms() > 0) {
+              setControlPeriodMs(cmd.control_period_ms());
+              // Recompute control period in ticks
+              uint32_t ticks = static_cast<uint32_t>(std::max(1.0, cmd.control_period_ms() / (dt * 1000.0)));
+              m_controlPeriodTicks.store(ticks, std::memory_order_relaxed);
+            }
+            if (cmd.sync_mode()) {
+              // Switching to sync mode - reset connection state
+              m_commServer->setSyncClientConnected(false);
             }
             msg = cmd.sync_mode() ? "Synchronous mode enabled" : "Asynchronous mode enabled";
             break;
@@ -198,6 +213,10 @@ void Simulator::loop(double dt) {
                         m_newParams.v_max, m_newParams.delta_max);
       dt = m_newParams.dt;
       m_dt = dt;
+      // Recompute control period in ticks based on new dt
+      uint32_t periodMs = m_controlPeriodMs.load(std::memory_order_relaxed);
+      uint32_t ticks = static_cast<uint32_t>(std::max(1.0, periodMs / (dt * 1000.0)));
+      m_controlPeriodTicks.store(ticks, std::memory_order_relaxed);
       // Reset state and tick counter
       resetState();
       m_paused.store(true, std::memory_order_relaxed);
@@ -224,46 +243,95 @@ void Simulator::loop(double dt) {
 
     // Determine control input based on mode
     CarInput u;
+    
     if (m_commEnabled.load(std::memory_order_relaxed) && m_commServer) {
       bool syncMode = m_syncMode.load(std::memory_order_relaxed);
-      uint32_t controlPeriod = m_controlPeriod.load(std::memory_order_relaxed);
+      uint32_t controlPeriodTicks = m_controlPeriodTicks.load(std::memory_order_relaxed);
 
-      if (syncMode && (tick % controlPeriod == 0)) {
-        // Synchronous mode: request control from client
-        lilsim::ControlRequest request;
-        auto* header = request.mutable_header();
-        header->set_tick(tick);
-        header->set_sim_time(tick * dt);
-        header->set_version(1);
+      if (syncMode) {
+        bool isControlTick = (tick % controlPeriodTicks == 0);
+        
+        if (isControlTick) {
+          // Synchronous mode: request control from client
+          lilsim::ControlRequest request;
+          auto* header = request.mutable_header();
+          header->set_tick(tick);
+          header->set_sim_time(tick * dt);
+          header->set_version(1);
 
-        // Include current state in request
-        auto* scene = request.mutable_scene();
-        auto* sceneHeader = scene->mutable_header();
-        sceneHeader->set_tick(tick);
-        sceneHeader->set_sim_time(tick * dt);
-        sceneHeader->set_version(1);
+          // Include current state in request
+          auto* scene = request.mutable_scene();
+          auto* sceneHeader = scene->mutable_header();
+          sceneHeader->set_tick(tick);
+          sceneHeader->set_sim_time(tick * dt);
+          sceneHeader->set_version(1);
 
-        auto* car = scene->mutable_car();
-        auto* pos = car->mutable_pos();
-        pos->set_x(m_state.car.pose.x());
-        pos->set_y(m_state.car.pose.y());
-        car->set_yaw(m_state.car.pose.yaw());
-        car->set_v(m_state.car.v);
-        car->set_yaw_rate(m_state.car.yaw_rate);
+          auto* car = scene->mutable_car();
+          auto* pos = car->mutable_pos();
+          pos->set_x(m_state.car.pose.x());
+          pos->set_y(m_state.car.pose.y());
+          car->set_yaw(m_state.car.pose.yaw());
+          car->set_v(m_state.car.v);
+          car->set_yaw_rate(m_state.car.yaw_rate);
 
-        lilsim::ControlReply reply;
-        if (m_commServer->requestControl(request, reply, 100)) {
-          // Got reply from client
-          u.delta = reply.steer_angle();
-          u.ax = reply.ax();
-          m_lastControlInput = u; // Save for hold policy
+          // Poll for control response with 50ms intervals, 500ms total timeout
+          lilsim::ControlReply reply;
+          bool gotReply = false;
+          auto pollStart = clock::now();
+          const int pollInterval = 50;  // ms
+          const int totalTimeout = 500; // ms
+          
+          while (!gotReply) {
+            // Check if we should exit polling loop (mode changed, comm disabled)
+            if (!m_commEnabled.load(std::memory_order_relaxed) || 
+                !m_syncMode.load(std::memory_order_relaxed)) {
+              spdlog::info("[sim] Sync mode disabled during control request, aborting");
+              break;
+            }
+            
+            // Try to get response
+            if (m_commServer->requestControl(request, reply, pollInterval)) {
+              gotReply = true;
+              u.delta = reply.steer_angle();
+              u.ax = reply.ax();
+              m_lastControlInput = u;
+              m_commServer->setSyncClientConnected(true);
+              break;
+            }
+            
+            // Check total timeout
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+              clock::now() - pollStart).count();
+            if (elapsed >= totalTimeout) {
+              // Client disconnected
+              spdlog::warn("[sim] Control request timeout ({}ms), client disconnected", elapsed);
+              m_commServer->setSyncClientConnected(false);
+              m_paused.store(true, std::memory_order_relaxed);
+              break;
+            }
+          }
+          
+          // If still in sync mode but didn't get reply, pause and wait
+          if (syncMode && !gotReply && m_commEnabled.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            next = clock::now();
+            continue;
+          }
         } else {
-          // Timeout: use hold policy (last control)
+          // Not a control tick in sync mode: use last control
           u = m_lastControlInput;
         }
       } else {
-        // Asynchronous mode or not a control tick: use last control
-        u = m_lastControlInput;
+        // Asynchronous mode: poll for async control
+        auto asyncControl = m_commServer->pollAsyncControl();
+        if (asyncControl.has_value()) {
+          u.delta = asyncControl->steer_angle();
+          u.ax = asyncControl->ax();
+          m_lastControlInput = u;
+        } else {
+          // No new async control: use last control
+          u = m_lastControlInput;
+        }
       }
     } else {
       // No comm: use manual input

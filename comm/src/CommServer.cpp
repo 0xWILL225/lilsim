@@ -29,8 +29,15 @@ bool CommServer::start() {
 
     // Create control requester (REQ) - for synchronous mode
     m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
+    m_controlReq->set(zmq::sockopt::sndtimeo, 100); // 100ms send timeout
     m_controlReq->bind(endpoints::CONTROL_REQ);
     spdlog::info("[comm] Control requester bound to {}", endpoints::CONTROL_REQ);
+
+    // Create async control subscriber (SUB) - for asynchronous mode
+    m_controlAsyncSub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::sub);
+    m_controlAsyncSub->bind(endpoints::CONTROL_ASYNC_SUB);
+    m_controlAsyncSub->set(zmq::sockopt::subscribe, ""); // Subscribe to all messages
+    spdlog::info("[comm] Async control subscriber bound to {}", endpoints::CONTROL_ASYNC_SUB);
 
     // Create admin replier (REP)
     m_adminRep = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::rep);
@@ -55,6 +62,7 @@ void CommServer::stop() {
   m_running.store(false, std::memory_order_relaxed);
 
   try {
+    // Close and reset all sockets
     if (m_statePub) {
       m_statePub->close();
       m_statePub.reset();
@@ -63,10 +71,17 @@ void CommServer::stop() {
       m_controlReq->close();
       m_controlReq.reset();
     }
+    if (m_controlAsyncSub) {
+      m_controlAsyncSub->close();
+      m_controlAsyncSub.reset();
+    }
     if (m_adminRep) {
       m_adminRep->close();
       m_adminRep.reset();
     }
+    
+    // Don't shutdown/reset context here - let destructor handle it
+    // This avoids issues with context lifecycle when stop/start is called multiple times
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] ZMQ error during stop: {}", e.what());
   }
@@ -96,14 +111,38 @@ bool CommServer::requestControl(const lilsim::ControlRequest& request,
   try {
     // Send control request
     if (!sendProto(*m_controlReq, request, zmq::send_flags::none)) {
+      // Send failed (timeout/no client) - reset socket to recover REQ state
+      spdlog::warn("[comm] Control request send failed, resetting socket");
+      m_controlReq->close();
+      m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
+      m_controlReq->set(zmq::sockopt::sndtimeo, 100);
+      m_controlReq->bind(endpoints::CONTROL_REQ);
       return false;
     }
 
     // Wait for reply with timeout
-    return recvProtoTimeout(*m_controlReq, reply, timeout_ms);
+    bool success = recvProtoTimeout(*m_controlReq, reply, timeout_ms);
+    
+    if (!success) {
+      // Recv timeout - reset socket to recover REQ state
+      spdlog::warn("[comm] Control reply timeout, resetting socket");
+      m_controlReq->close();
+      m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
+      m_controlReq->set(zmq::sockopt::sndtimeo, 100);
+      m_controlReq->bind(endpoints::CONTROL_REQ);
+    }
+    
+    return success;
 
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] Error in control request: {}", e.what());
+    // Reset socket on error
+    try {
+      m_controlReq->close();
+      m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
+      m_controlReq->set(zmq::sockopt::sndtimeo, 100);
+      m_controlReq->bind(endpoints::CONTROL_REQ);
+    } catch (...) {}
     return false;
   }
 }
@@ -147,6 +186,23 @@ void CommServer::replyAdmin(const lilsim::AdminReply& reply) {
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] Error replying to admin command: {}", e.what());
   }
+}
+
+std::optional<lilsim::ControlAsync> CommServer::pollAsyncControl() {
+  if (!m_running.load(std::memory_order_relaxed) || !m_controlAsyncSub) {
+    return std::nullopt;
+  }
+
+  try {
+    lilsim::ControlAsync control;
+    if (recvProto(*m_controlAsyncSub, control, zmq::recv_flags::dontwait)) {
+      return control;
+    }
+  } catch (const zmq::error_t& e) {
+    spdlog::error("[comm] Error polling async control: {}", e.what());
+  }
+
+  return std::nullopt;
 }
 
 // ============ MarkerSubscriber ============
@@ -193,6 +249,12 @@ void MarkerSubscriber::stop() {
     if (m_markerSub) {
       m_markerSub->close();
       m_markerSub.reset();
+    }
+    
+    // Explicitly shutdown context to avoid blocking on destruction
+    if (m_context) {
+      m_context->shutdown();
+      m_context.reset();
     }
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] ZMQ error during MarkerSubscriber stop: {}", e.what());

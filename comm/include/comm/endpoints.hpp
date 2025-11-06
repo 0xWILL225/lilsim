@@ -32,6 +32,10 @@ constexpr const char* CONTROL_REP = "tcp://localhost:5557";
 constexpr const char* ADMIN_REP = "tcp://*:5558";
 constexpr const char* ADMIN_REQ = "tcp://localhost:5558";
 
+// Asynchronous control: client publishes control, simulator subscribes
+constexpr const char* CONTROL_ASYNC_SUB = "tcp://*:5559";
+constexpr const char* CONTROL_ASYNC_PUB = "tcp://localhost:5559";
+
 // Marker stream: client publishes markers, viz subscribes
 constexpr const char* MARKER_PUB = "tcp://localhost:5560";
 constexpr const char* MARKER_SUB = "tcp://*:5560";

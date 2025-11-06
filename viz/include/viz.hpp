@@ -81,6 +81,10 @@ private:
 
   float m_clearColor[4] = {0.45f, 0.55f, 0.60f, 1.00f};
 
+  // Frame rate limiting
+  double m_targetFrameTime = 1.0 / 30.0; // 30 FPS
+  double m_lastFrameTime = 0.0;
+
   // Input state for car control
   bool m_keyW = false, m_keyA = false, m_keyS = false, m_keyD = false;
 
