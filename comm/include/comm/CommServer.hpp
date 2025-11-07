@@ -73,6 +73,13 @@ public:
                       int timeout_ms = 100);
 
   /**
+   * @brief Probe if sync client is connected (lightweight heartbeat check)
+   * @param timeout_ms Timeout in milliseconds
+   * @return true if client responded, false otherwise
+   */
+  bool probeConnection(int timeout_ms = 50);
+
+  /**
    * @brief Poll for admin commands (non-blocking)
    * @return Admin command if one is pending, std::nullopt otherwise
    */
@@ -99,24 +106,19 @@ public:
 
   /**
    * @brief Check if sync client is connected
+   * 
+   * Connection state is automatically updated by requestControl() and probeConnection()
    */
   bool isSyncClientConnected() const {
     return m_syncClientConnected.load(std::memory_order_relaxed);
   }
 
-  /**
-   * @brief Set sync client connection state
-   */
-  void setSyncClientConnected(bool connected) {
-    m_syncClientConnected.store(connected, std::memory_order_relaxed);
-  }
-
 private:
   std::unique_ptr<zmq::context_t> m_context;
-  std::unique_ptr<zmq::socket_t> m_statePub;      // PUB socket for state updates
-  std::unique_ptr<zmq::socket_t> m_controlReq;    // REQ socket for control requests (sync)
+  std::unique_ptr<zmq::socket_t> m_statePub;        // PUB socket for state updates
+  std::unique_ptr<zmq::socket_t> m_controlDealer;   // DEALER socket for control requests/replies (sync)
   std::unique_ptr<zmq::socket_t> m_controlAsyncSub; // SUB socket for async control
-  std::unique_ptr<zmq::socket_t> m_adminRep;      // REP socket for admin commands
+  std::unique_ptr<zmq::socket_t> m_adminRep;        // REP socket for admin commands
   
   std::atomic<bool> m_running{false};
   std::atomic<bool> m_adminCommandPending{false};

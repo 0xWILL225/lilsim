@@ -37,7 +37,8 @@ Application::Application(scene::SceneDB& db, sim::Simulator& sim)
   , m_simulator(sim)
   , m_rightPanel("Admin Panel", SidePanel::Side::Right, 300.0f)
   , m_leftPanel("Display", SidePanel::Side::Left, 300.0f)
-  , m_viewportPanel(db, &m_markerSystem, &m_showCar, &m_showCones) {
+  , m_viewportPanel(db, &m_markerSystem, &m_showCar, &m_showCones)
+  , m_lastConnectionProbe(std::chrono::steady_clock::now()) {
   // Set default track directory to executable path + /tracks
   std::filesystem::path exePath = std::filesystem::current_path();
   std::string defaultTrackPath = (exePath / "tracks").string();
@@ -446,6 +447,18 @@ void Application::mainLoop() {
   glfwPollEvents();
   handleInput();
 
+  // Probe sync client connection every 200ms (for UI status indicator)
+  if (m_simulator.isCommEnabled() && m_simulator.isSyncMode()) {
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      now - m_lastConnectionProbe).count();
+    
+    if (elapsed >= 200) {
+      m_simulator.probeConnection();
+      m_lastConnectionProbe = now;
+    }
+  }
+
   // Get current texture from m_surface BEFORE starting ImGui frame
   WGPUSurfaceTexture m_surfaceTexture = {};
   wgpuSurfaceGetCurrentTexture(m_surface, &m_surfaceTexture);
@@ -814,10 +827,8 @@ void Application::setupPanels() {
       ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.0f, 0.0f, 1.0f));
     }
     
-    // Disable button if in sync mode and no client connected
-    bool canResume = !isPaused || !commEnabled || !syncMode || syncClientConnected;
-    ImGui::BeginDisabled(isPaused && !canResume);
-    
+    // Always allow Resume - let simulator detect reconnection
+    // (No longer disable Resume when client is disconnected in sync mode)
     if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(140, 30))) {
       if (isPaused) {
         m_simulator.resume();
@@ -826,7 +837,6 @@ void Application::setupPanels() {
       }
     }
     
-    ImGui::EndDisabled();
     ImGui::PopStyleColor(3);
 
     ImGui::SameLine();
@@ -871,19 +881,28 @@ void Application::setupPanels() {
     if (commEnabled) {
       float activeOpacity = 1.0f;
       float inactiveOpacity = 0.3f;
+      float circleRadius = 5.0f;
+      
+      // Helper lambda to draw status circle
+      auto drawStatusCircle = [circleRadius](ImVec4 color) {
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+        ImVec2 circleCenter = ImVec2(cursorPos.x + circleRadius, cursorPos.y + ImGui::GetTextLineHeight() * 0.5f);
+        ImGui::GetWindowDrawList()->AddCircleFilled(circleCenter, circleRadius, ImGui::ColorConvertFloat4ToU32(color));
+        ImGui::Dummy(ImVec2(circleRadius * 2.0f, 0));
+      };
       
       // State publisher - always active when enabled
-      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+      drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
       ImGui::SameLine();
       ImGui::Text("State (5556): Publishing");
       
       // Async control socket (5559)
       if (!syncMode) {
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+        drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
         ImGui::SameLine();
         ImGui::Text("Control Async (5559): Listening");
       } else {
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity), "●");
+        drawStatusCircle(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity));
         ImGui::SameLine();
         ImGui::TextDisabled("Control Async (5559): Inactive");
       }
@@ -891,31 +910,35 @@ void Application::setupPanels() {
       // Sync control socket (5557)
       if (syncMode) {
         if (syncClientConnected) {
-          ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+          drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
           ImGui::SameLine();
           ImGui::Text("Control Sync (5557): Connected");
         } else {
-          ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, activeOpacity), "●");
+          drawStatusCircle(ImVec4(1.0f, 0.0f, 0.0f, activeOpacity));
           ImGui::SameLine();
           ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Control Sync (5557): NO CLIENT");
         }
       } else {
-        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity), "●");
+        drawStatusCircle(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity));
         ImGui::SameLine();
         ImGui::TextDisabled("Control Sync (5557): Inactive");
       }
       
       // Admin socket - always listening
-      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+      drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
       ImGui::SameLine();
       ImGui::Text("Admin (5558): Listening");
       
       // Markers
-      ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity), "●");
+      drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
       ImGui::SameLine();
       ImGui::Text("Markers (5560): Listening");
     } else {
-      ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "●");
+      float circleRadius = 5.0f;
+      ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+      ImVec2 circleCenter = ImVec2(cursorPos.x + circleRadius, cursorPos.y + ImGui::GetTextLineHeight() * 0.5f);
+      ImGui::GetWindowDrawList()->AddCircleFilled(circleCenter, circleRadius, ImGui::ColorConvertFloat4ToU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)));
+      ImGui::Dummy(ImVec2(circleRadius * 2.0f, 0));
       ImGui::SameLine();
       ImGui::TextDisabled("All sockets: Disabled");
     }

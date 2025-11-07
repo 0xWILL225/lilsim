@@ -27,11 +27,10 @@ bool CommServer::start() {
     m_statePub->bind(endpoints::STATE_PUB);
     spdlog::info("[comm] State publisher bound to {}", endpoints::STATE_PUB);
 
-    // Create control requester (REQ) - for synchronous mode
-    m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
-    m_controlReq->set(zmq::sockopt::sndtimeo, 100); // 100ms send timeout
-    m_controlReq->bind(endpoints::CONTROL_REQ);
-    spdlog::info("[comm] Control requester bound to {}", endpoints::CONTROL_REQ);
+    // Create control dealer (DEALER) - for synchronous mode
+    m_controlDealer = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::dealer);
+    m_controlDealer->bind(endpoints::CONTROL_REQ);
+    spdlog::info("[comm] Control dealer bound to {}", endpoints::CONTROL_REQ);
 
     // Create async control subscriber (SUB) - for asynchronous mode
     m_controlAsyncSub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::sub);
@@ -67,9 +66,9 @@ void CommServer::stop() {
       m_statePub->close();
       m_statePub.reset();
     }
-    if (m_controlReq) {
-      m_controlReq->close();
-      m_controlReq.reset();
+    if (m_controlDealer) {
+      m_controlDealer->close();
+      m_controlDealer.reset();
     }
     if (m_controlAsyncSub) {
       m_controlAsyncSub->close();
@@ -104,45 +103,62 @@ void CommServer::publishState(const lilsim::StateUpdate& update) {
 bool CommServer::requestControl(const lilsim::ControlRequest& request,
                                 lilsim::ControlReply& reply,
                                 int timeout_ms) {
-  if (!m_running.load(std::memory_order_relaxed) || !m_controlReq) {
+  if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
     return false;
   }
 
   try {
-    // Send control request
-    if (!sendProto(*m_controlReq, request, zmq::send_flags::none)) {
-      // Send failed (timeout/no client) - reset socket to recover REQ state
-      spdlog::warn("[comm] Control request send failed, resetting socket");
-      m_controlReq->close();
-      m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
-      m_controlReq->set(zmq::sockopt::sndtimeo, 100);
-      m_controlReq->bind(endpoints::CONTROL_REQ);
+    // Send control request (DEALER doesn't enforce strict ordering)
+    if (!sendProto(*m_controlDealer, request, zmq::send_flags::dontwait)) {
       return false;
     }
 
     // Wait for reply with timeout
-    bool success = recvProtoTimeout(*m_controlReq, reply, timeout_ms);
+    bool success = recvProtoTimeout(*m_controlDealer, reply, timeout_ms);
     
-    if (!success) {
-      // Recv timeout - reset socket to recover REQ state
-      spdlog::warn("[comm] Control reply timeout, resetting socket");
-      m_controlReq->close();
-      m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
-      m_controlReq->set(zmq::sockopt::sndtimeo, 100);
-      m_controlReq->bind(endpoints::CONTROL_REQ);
-    }
+    // Update connection state based on result
+    m_syncClientConnected.store(success, std::memory_order_relaxed);
     
     return success;
 
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] Error in control request: {}", e.what());
-    // Reset socket on error
-    try {
-      m_controlReq->close();
-      m_controlReq = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::req);
-      m_controlReq->set(zmq::sockopt::sndtimeo, 100);
-      m_controlReq->bind(endpoints::CONTROL_REQ);
-    } catch (...) {}
+    m_syncClientConnected.store(false, std::memory_order_relaxed);
+    return false;
+  }
+}
+
+bool CommServer::probeConnection(int timeout_ms) {
+  if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
+    return false;
+  }
+
+  try {
+    // Send a lightweight control request with tick=0 as heartbeat
+    lilsim::ControlRequest probe;
+    auto* header = probe.mutable_header();
+    header->set_tick(0);  // Special tick=0 indicates heartbeat
+    header->set_sim_time(0.0);
+    header->set_version(1);
+
+    // Send probe
+    if (!sendProto(*m_controlDealer, probe, zmq::send_flags::dontwait)) {
+      m_syncClientConnected.store(false, std::memory_order_relaxed);
+      return false;
+    }
+
+    // Wait for reply
+    lilsim::ControlReply reply;
+    bool success = recvProtoTimeout(*m_controlDealer, reply, timeout_ms);
+    
+    // Update connection state
+    m_syncClientConnected.store(success, std::memory_order_relaxed);
+    
+    return success;
+
+  } catch (const zmq::error_t& e) {
+    spdlog::error("[comm] Error in connection probe: {}", e.what());
+    m_syncClientConnected.store(false, std::memory_order_relaxed);
     return false;
   }
 }

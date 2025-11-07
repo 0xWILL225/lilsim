@@ -51,7 +51,7 @@ class LilsimClient:
         
         # Sockets
         self.state_sub: Optional[zmq.Socket] = None
-        self.control_rep: Optional[zmq.Socket] = None
+        self.control_dealer: Optional[zmq.Socket] = None
         self.control_async_pub: Optional[zmq.Socket] = None
         self.admin_req: Optional[zmq.Socket] = None
         self.marker_pub: Optional[zmq.Socket] = None
@@ -98,16 +98,16 @@ class LilsimClient:
         time.sleep(0.5)
         
     def connect_control_sync(self):
-        """Connect to synchronous control endpoint (REP socket).
+        """Connect to synchronous control endpoint (DEALER socket).
         
         Call this only if you want to respond to control requests in sync mode.
         """
-        if self.control_rep is not None:
+        if self.control_dealer is not None:
             logger.warning("Control sync already connected")
             return
             
-        self.control_rep = self.context.socket(zmq.REP)
-        self.control_rep.connect(f"tcp://{self.host}:5557")
+        self.control_dealer = self.context.socket(zmq.DEALER)
+        self.control_dealer.connect(f"tcp://{self.host}:5557")
         logger.info("Connected to sync control endpoint (port 5557)")
         
     def connect_control_async(self):
@@ -142,7 +142,7 @@ class LilsimClient:
         logger.info(f"Registered sync controller: {controller.__name__}")
         
         # Ensure control sync socket is connected
-        if self.control_rep is None:
+        if self.control_dealer is None:
             self.connect_control_sync()
             
     def send_control_async(self, steer_angle: float, ax: float):
@@ -204,10 +204,21 @@ class LilsimClient:
         while self.running:
             try:
                 # Non-blocking poll with timeout
-                if self.control_rep.poll(timeout=100):  # 100ms timeout
-                    msg_bytes = self.control_rep.recv()
+                if self.control_dealer.poll(timeout=100):  # 100ms timeout
+                    msg_bytes = self.control_dealer.recv()
                     control_request = messages_pb2.ControlRequest()
                     control_request.ParseFromString(msg_bytes)
+                    
+                    # Handle heartbeat probes (tick=0) - just respond immediately
+                    if control_request.header.tick == 0:
+                        reply = messages_pb2.ControlReply()
+                        reply.header.tick = 0
+                        reply.header.sim_time = 0.0
+                        reply.header.version = 1
+                        reply.steer_angle = 0.0
+                        reply.ax = 0.0
+                        self.control_dealer.send(reply.SerializeToString())
+                        continue
                     
                     # Get control from controller or use last control
                     if self.sync_controller is not None:
@@ -227,7 +238,7 @@ class LilsimClient:
                     reply.steer_angle = steer_angle
                     reply.ax = ax
                     
-                    self.control_rep.send(reply.SerializeToString())
+                    self.control_dealer.send(reply.SerializeToString())
                     
             except Exception as e:
                 if self.running:
@@ -248,7 +259,7 @@ class LilsimClient:
         self.state_thread.start()
         
         # Start control responder if sync controller is registered
-        if self.control_rep is not None:
+        if self.control_dealer is not None:
             self.control_thread = threading.Thread(target=self._control_responder_thread, daemon=True)
             self.control_thread.start()
             
@@ -275,8 +286,8 @@ class LilsimClient:
         
         if self.state_sub:
             self.state_sub.close()
-        if self.control_rep:
-            self.control_rep.close()
+        if self.control_dealer:
+            self.control_dealer.close()
         if self.control_async_pub:
             self.control_async_pub.close()
         if self.admin_req:

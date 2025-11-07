@@ -62,6 +62,7 @@ public:
 
   // Communication
   std::unique_ptr<comm::MarkerSubscriber> m_markerSub;
+  std::chrono::steady_clock::time_point m_lastConnectionProbe;
 
 private:
   // References to scene and simulator

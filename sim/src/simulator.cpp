@@ -38,6 +38,13 @@ bool Simulator::isSyncClientConnected() const {
   return m_commServer && m_commServer->isSyncClientConnected();
 }
 
+void Simulator::probeConnection() {
+  if (m_commServer && m_commEnabled.load(std::memory_order_relaxed) && 
+      m_syncMode.load(std::memory_order_relaxed)) {
+    m_commServer->probeConnection(50);  // 50ms timeout for heartbeat
+  }
+}
+
 void Simulator::enableComm(bool enable) {
   if (enable && !m_commEnabled.load(std::memory_order_relaxed)) {
     // Start communication
@@ -172,10 +179,6 @@ void Simulator::loop(double dt) {
               uint32_t ticks = static_cast<uint32_t>(std::max(1.0, cmd.control_period_ms() / (dt * 1000.0)));
               m_controlPeriodTicks.store(ticks, std::memory_order_relaxed);
             }
-            if (cmd.sync_mode()) {
-              // Switching to sync mode - reset connection state
-              m_commServer->setSyncClientConnected(false);
-            }
             msg = cmd.sync_mode() ? "Synchronous mode enabled" : "Asynchronous mode enabled";
             break;
 
@@ -289,13 +292,12 @@ void Simulator::loop(double dt) {
               break;
             }
             
-            // Try to get response
+            // Try to get response (connection state updated automatically)
             if (m_commServer->requestControl(request, reply, pollInterval)) {
               gotReply = true;
               u.delta = reply.steer_angle();
               u.ax = reply.ax();
               m_lastControlInput = u;
-              m_commServer->setSyncClientConnected(true);
               break;
             }
             
@@ -303,9 +305,8 @@ void Simulator::loop(double dt) {
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
               clock::now() - pollStart).count();
             if (elapsed >= totalTimeout) {
-              // Client disconnected
+              // Client disconnected (connection state already set to false by requestControl)
               spdlog::warn("[sim] Control request timeout ({}ms), client disconnected", elapsed);
-              m_commServer->setSyncClientConnected(false);
               m_paused.store(true, std::memory_order_relaxed);
               break;
             }

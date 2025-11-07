@@ -84,6 +84,12 @@ public:
     return m_controlPeriodTicks.load(std::memory_order_relaxed);
   }
   bool isSyncClientConnected() const;
+  
+  /**
+   * @brief Probe sync client connection (for UI heartbeat checking)
+   * Only meaningful when in sync mode with comm enabled
+   */
+  void probeConnection();
 
 private:
   void loop(double dt);

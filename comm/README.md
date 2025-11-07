@@ -9,7 +9,7 @@ The `comm` module provides ZeroMQ-based communication between the lilsim simulat
 | Socket | Direction | Pattern | Port | Message Types | Purpose |
 |--------|-----------|---------|------|---------------|---------|
 | **State Stream** | sim → client | PUB/SUB | 5556 | `StateUpdate` | Broadcasts simulation state every tick |
-| **Synchronous Control** | sim ↔ client | REQ/REP | 5557 | `ControlRequest`/`ControlReply` | Requests control input in sync mode |
+| **Synchronous Control** | sim ↔ client | DEALER/DEALER | 5557 | `ControlRequest`/`ControlReply` | Requests control input in sync mode |
 | **Admin Commands** | client ↔ sim | REQ/REP | 5558 | `AdminCommand`/`AdminReply` | Remote control (pause, reset, params, etc.) |
 | **Asynchronous Control** | client → sim | PUB/SUB | 5559 | `ControlAsync` | Client publishes control commands in async mode |
 | **Marker Stream** | client → viz | PUB/SUB | 5560 | `MarkerArray` | Visualization markers from clients |
@@ -37,7 +37,9 @@ In the GUI:
 - Simulator requests control every K ticks (computed from milliseconds and dt)
 - Waits for client response with 50ms polling intervals, 500ms total timeout
 - On timeout: pauses simulation and marks client as disconnected
-- Client must reconnect or mode must be switched to resume
+- Uses DEALER/DEALER pattern for robust timeout handling (no socket resets)
+- Heartbeat probes (tick=0) sent every 200ms from UI to detect client connection
+- Client automatically responds to heartbeats and control requests
 - Deterministic, ideal for step-through debugging in Jupyter
 
 ### Message Format
@@ -81,10 +83,12 @@ while True:
 ## Implementation Details
 
 ### CommServer (sim/Simulator)
-- Manages 4 sockets: state PUB, control REQ (sync), control SUB (async), admin REP
+- Manages 4 sockets: state PUB, control DEALER (sync), control SUB (async), admin REP
 - State publishing happens every tick (non-blocking)
 - Async control: polls SUB socket for latest control
-- Sync control: requests with 50ms polling, 500ms timeout
+- Sync control: DEALER socket for robust request/reply, 500ms timeout
+- Connection state automatically tracked via successful responses
+- No socket resets needed (DEALER handles timeouts gracefully)
 - Admin commands are polled and handled non-blocking
 
 ### MarkerSubscriber (viz/Application)

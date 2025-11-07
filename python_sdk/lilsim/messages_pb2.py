@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0emessages.proto\x12\x06lilsim\"9\n\x06Header\x12\x0c\n\x04tick\x18\x01 \x01(\x04\x12\x10\n\x08sim_time\x18\x02 \x01(\x01\x12\x0f\n\x07version\x18\x03 \x01(\r\"\x1c\n\x04Vec2\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\"O\n\x08\x43\x61rState\x12\x19\n\x03pos\x18\x01 \x01(\x0b\x32\x0c.lilsim.Vec2\x12\x0b\n\x03yaw\x18\x02 \x01(\x01\x12\t\n\x01v\x18\x03 \x01(\x01\x12\x10\n\x08yaw_rate\x18\x04 \x01(\x01\"K\n\nSceneState\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x1d\n\x03\x63\x61r\x18\x02 \x01(\x0b\x32\x10.lilsim.CarState\"0\n\x0bStateUpdate\x12!\n\x05scene\x18\x01 \x01(\x0b\x32\x12.lilsim.SceneState\"S\n\x0e\x43ontrolRequest\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12!\n\x05scene\x18\x02 \x01(\x0b\x32\x12.lilsim.SceneState\"O\n\x0c\x43ontrolReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x13\n\x0bsteer_angle\x18\x02 \x01(\x01\x12\n\n\x02\x61x\x18\x03 \x01(\x01\"X\n\tSimParams\x12\n\n\x02\x64t\x18\x01 \x01(\x01\x12\x11\n\twheelbase\x18\x02 \x01(\x01\x12\r\n\x05v_max\x18\x03 \x01(\x01\x12\x11\n\tdelta_max\x18\x04 \x01(\x01\x12\n\n\x02Lf\x18\x05 \x01(\x01\"\xb8\x01\n\x0c\x41\x64minCommand\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12&\n\x04type\x18\x02 \x01(\x0e\x32\x18.lilsim.AdminCommandType\x12\x12\n\nstep_count\x18\x03 \x01(\x04\x12!\n\x06params\x18\x04 \x01(\x0b\x32\x11.lilsim.SimParams\x12\x11\n\tsync_mode\x18\x05 \x01(\x08\x12\x16\n\x0e\x63ontrol_period\x18\x06 \x01(\r\"N\n\nAdminReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0f\n\x07message\x18\x03 \x01(\t\"3\n\x05\x43olor\x12\t\n\x01r\x18\x01 \x01(\r\x12\t\n\x01g\x18\x02 \x01(\r\x12\t\n\x01\x62\x18\x03 \x01(\r\x12\t\n\x01\x61\x18\x04 \x01(\r\"\x1f\n\x07Scale2D\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\"(\n\x03SE2\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\x12\x0b\n\x03yaw\x18\x03 \x01(\x01\"\xe8\x01\n\x06Marker\x12\n\n\x02ns\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\x05\x12 \n\x04type\x18\x03 \x01(\x0e\x32\x12.lilsim.MarkerType\x12\x19\n\x04pose\x18\x04 \x01(\x0b\x32\x0b.lilsim.SE2\x12\x1c\n\x05\x63olor\x18\x05 \x01(\x0b\x32\r.lilsim.Color\x12\x1e\n\x05scale\x18\x06 \x01(\x0b\x32\x0f.lilsim.Scale2D\x12\x0c\n\x04text\x18\x07 \x01(\t\x12\x1b\n\x06points\x18\x08 \x03(\x0b\x32\x0b.lilsim.SE2\x12\x0f\n\x07ttl_sec\x18\t \x01(\x01\x12\x0f\n\x07visible\x18\n \x01(\x08\"N\n\x0bMarkerArray\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x1f\n\x07markers\x18\x02 \x03(\x0b\x32\x0e.lilsim.Marker*c\n\x10\x41\x64minCommandType\x12\x08\n\x04INIT\x10\x00\x12\t\n\x05RESET\x10\x01\x12\t\n\x05PAUSE\x10\x02\x12\x07\n\x03RUN\x10\x03\x12\x08\n\x04STEP\x10\x04\x12\x0e\n\nSET_PARAMS\x10\x05\x12\x0c\n\x08SET_MODE\x10\x06*\xac\x01\n\nMarkerType\x12\x08\n\x04TEXT\x10\x00\x12\t\n\x05\x41RROW\x10\x01\x12\r\n\tRECTANGLE\x10\x02\x12\n\n\x06\x43IRCLE\x10\x03\x12\r\n\tLINE_LIST\x10\x04\x12\x0e\n\nLINE_STRIP\x10\x05\x12\x12\n\x0eRECTANGLE_LIST\x10\x06\x12\x0f\n\x0b\x43IRCLE_LIST\x10\x07\x12\n\n\x06POINTS\x10\x08\x12\x11\n\rTRIANGLE_LIST\x10\t\x12\x0b\n\x07MESH_2D\x10\nb\x06proto3'
+  serialized_pb=b'\n\x0emessages.proto\x12\x06lilsim\"9\n\x06Header\x12\x0c\n\x04tick\x18\x01 \x01(\x04\x12\x10\n\x08sim_time\x18\x02 \x01(\x01\x12\x0f\n\x07version\x18\x03 \x01(\r\"\x1c\n\x04Vec2\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\"O\n\x08\x43\x61rState\x12\x19\n\x03pos\x18\x01 \x01(\x0b\x32\x0c.lilsim.Vec2\x12\x0b\n\x03yaw\x18\x02 \x01(\x01\x12\t\n\x01v\x18\x03 \x01(\x01\x12\x10\n\x08yaw_rate\x18\x04 \x01(\x01\"K\n\nSceneState\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x1d\n\x03\x63\x61r\x18\x02 \x01(\x0b\x32\x10.lilsim.CarState\"0\n\x0bStateUpdate\x12!\n\x05scene\x18\x01 \x01(\x0b\x32\x12.lilsim.SceneState\"O\n\x0c\x43ontrolAsync\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x13\n\x0bsteer_angle\x18\x02 \x01(\x01\x12\n\n\x02\x61x\x18\x03 \x01(\x01\"S\n\x0e\x43ontrolRequest\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12!\n\x05scene\x18\x02 \x01(\x0b\x32\x12.lilsim.SceneState\"O\n\x0c\x43ontrolReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x13\n\x0bsteer_angle\x18\x02 \x01(\x01\x12\n\n\x02\x61x\x18\x03 \x01(\x01\"X\n\tSimParams\x12\n\n\x02\x64t\x18\x01 \x01(\x01\x12\x11\n\twheelbase\x18\x02 \x01(\x01\x12\r\n\x05v_max\x18\x03 \x01(\x01\x12\x11\n\tdelta_max\x18\x04 \x01(\x01\x12\n\n\x02Lf\x18\x05 \x01(\x01\"\xbb\x01\n\x0c\x41\x64minCommand\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12&\n\x04type\x18\x02 \x01(\x0e\x32\x18.lilsim.AdminCommandType\x12\x12\n\nstep_count\x18\x03 \x01(\x04\x12!\n\x06params\x18\x04 \x01(\x0b\x32\x11.lilsim.SimParams\x12\x11\n\tsync_mode\x18\x05 \x01(\x08\x12\x19\n\x11\x63ontrol_period_ms\x18\x06 \x01(\r\"N\n\nAdminReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0f\n\x07message\x18\x03 \x01(\t\"3\n\x05\x43olor\x12\t\n\x01r\x18\x01 \x01(\r\x12\t\n\x01g\x18\x02 \x01(\r\x12\t\n\x01\x62\x18\x03 \x01(\r\x12\t\n\x01\x61\x18\x04 \x01(\r\"\x1f\n\x07Scale2D\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\"(\n\x03SE2\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\x12\x0b\n\x03yaw\x18\x03 \x01(\x01\"\xe8\x01\n\x06Marker\x12\n\n\x02ns\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\x05\x12 \n\x04type\x18\x03 \x01(\x0e\x32\x12.lilsim.MarkerType\x12\x19\n\x04pose\x18\x04 \x01(\x0b\x32\x0b.lilsim.SE2\x12\x1c\n\x05\x63olor\x18\x05 \x01(\x0b\x32\r.lilsim.Color\x12\x1e\n\x05scale\x18\x06 \x01(\x0b\x32\x0f.lilsim.Scale2D\x12\x0c\n\x04text\x18\x07 \x01(\t\x12\x1b\n\x06points\x18\x08 \x03(\x0b\x32\x0b.lilsim.SE2\x12\x0f\n\x07ttl_sec\x18\t \x01(\x01\x12\x0f\n\x07visible\x18\n \x01(\x08\"N\n\x0bMarkerArray\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x1f\n\x07markers\x18\x02 \x03(\x0b\x32\x0e.lilsim.Marker*c\n\x10\x41\x64minCommandType\x12\x08\n\x04INIT\x10\x00\x12\t\n\x05RESET\x10\x01\x12\t\n\x05PAUSE\x10\x02\x12\x07\n\x03RUN\x10\x03\x12\x08\n\x04STEP\x10\x04\x12\x0e\n\nSET_PARAMS\x10\x05\x12\x0c\n\x08SET_MODE\x10\x06*\xac\x01\n\nMarkerType\x12\x08\n\x04TEXT\x10\x00\x12\t\n\x05\x41RROW\x10\x01\x12\r\n\tRECTANGLE\x10\x02\x12\n\n\x06\x43IRCLE\x10\x03\x12\r\n\tLINE_LIST\x10\x04\x12\x0e\n\nLINE_STRIP\x10\x05\x12\x12\n\x0eRECTANGLE_LIST\x10\x06\x12\x0f\n\x0b\x43IRCLE_LIST\x10\x07\x12\n\n\x06POINTS\x10\x08\x12\x11\n\rTRIANGLE_LIST\x10\t\x12\x0b\n\x07MESH_2D\x10\nb\x06proto3'
 )
 
 _ADMINCOMMANDTYPE = _descriptor.EnumDescriptor(
@@ -68,8 +68,8 @@ _ADMINCOMMANDTYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=1289,
-  serialized_end=1388,
+  serialized_start=1373,
+  serialized_end=1472,
 )
 _sym_db.RegisterEnumDescriptor(_ADMINCOMMANDTYPE)
 
@@ -139,8 +139,8 @@ _MARKERTYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=1391,
-  serialized_end=1563,
+  serialized_start=1475,
+  serialized_end=1647,
 )
 _sym_db.RegisterEnumDescriptor(_MARKERTYPE)
 
@@ -375,6 +375,52 @@ _STATEUPDATE = _descriptor.Descriptor(
 )
 
 
+_CONTROLASYNC = _descriptor.Descriptor(
+  name='ControlAsync',
+  full_name='lilsim.ControlAsync',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='header', full_name='lilsim.ControlAsync.header', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='steer_angle', full_name='lilsim.ControlAsync.steer_angle', index=1,
+      number=2, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='ax', full_name='lilsim.ControlAsync.ax', index=2,
+      number=3, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto3',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=323,
+  serialized_end=402,
+)
+
+
 _CONTROLREQUEST = _descriptor.Descriptor(
   name='ControlRequest',
   full_name='lilsim.ControlRequest',
@@ -409,8 +455,8 @@ _CONTROLREQUEST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=323,
-  serialized_end=406,
+  serialized_start=404,
+  serialized_end=487,
 )
 
 
@@ -455,8 +501,8 @@ _CONTROLREPLY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=408,
-  serialized_end=487,
+  serialized_start=489,
+  serialized_end=568,
 )
 
 
@@ -515,8 +561,8 @@ _SIMPARAMS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=489,
-  serialized_end=577,
+  serialized_start=570,
+  serialized_end=658,
 )
 
 
@@ -564,7 +610,7 @@ _ADMINCOMMAND = _descriptor.Descriptor(
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='control_period', full_name='lilsim.AdminCommand.control_period', index=5,
+      name='control_period_ms', full_name='lilsim.AdminCommand.control_period_ms', index=5,
       number=6, type=13, cpp_type=3, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
@@ -582,8 +628,8 @@ _ADMINCOMMAND = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=580,
-  serialized_end=764,
+  serialized_start=661,
+  serialized_end=848,
 )
 
 
@@ -628,8 +674,8 @@ _ADMINREPLY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=766,
-  serialized_end=844,
+  serialized_start=850,
+  serialized_end=928,
 )
 
 
@@ -681,8 +727,8 @@ _COLOR = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=846,
-  serialized_end=897,
+  serialized_start=930,
+  serialized_end=981,
 )
 
 
@@ -720,8 +766,8 @@ _SCALE2D = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=899,
-  serialized_end=930,
+  serialized_start=983,
+  serialized_end=1014,
 )
 
 
@@ -766,8 +812,8 @@ _SE2 = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=932,
-  serialized_end=972,
+  serialized_start=1016,
+  serialized_end=1056,
 )
 
 
@@ -861,8 +907,8 @@ _MARKER = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=975,
-  serialized_end=1207,
+  serialized_start=1059,
+  serialized_end=1291,
 )
 
 
@@ -900,14 +946,15 @@ _MARKERARRAY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1209,
-  serialized_end=1287,
+  serialized_start=1293,
+  serialized_end=1371,
 )
 
 _CARSTATE.fields_by_name['pos'].message_type = _VEC2
 _SCENESTATE.fields_by_name['header'].message_type = _HEADER
 _SCENESTATE.fields_by_name['car'].message_type = _CARSTATE
 _STATEUPDATE.fields_by_name['scene'].message_type = _SCENESTATE
+_CONTROLASYNC.fields_by_name['header'].message_type = _HEADER
 _CONTROLREQUEST.fields_by_name['header'].message_type = _HEADER
 _CONTROLREQUEST.fields_by_name['scene'].message_type = _SCENESTATE
 _CONTROLREPLY.fields_by_name['header'].message_type = _HEADER
@@ -927,6 +974,7 @@ DESCRIPTOR.message_types_by_name['Vec2'] = _VEC2
 DESCRIPTOR.message_types_by_name['CarState'] = _CARSTATE
 DESCRIPTOR.message_types_by_name['SceneState'] = _SCENESTATE
 DESCRIPTOR.message_types_by_name['StateUpdate'] = _STATEUPDATE
+DESCRIPTOR.message_types_by_name['ControlAsync'] = _CONTROLASYNC
 DESCRIPTOR.message_types_by_name['ControlRequest'] = _CONTROLREQUEST
 DESCRIPTOR.message_types_by_name['ControlReply'] = _CONTROLREPLY
 DESCRIPTOR.message_types_by_name['SimParams'] = _SIMPARAMS
@@ -975,6 +1023,13 @@ StateUpdate = _reflection.GeneratedProtocolMessageType('StateUpdate', (_message.
   # @@protoc_insertion_point(class_scope:lilsim.StateUpdate)
   })
 _sym_db.RegisterMessage(StateUpdate)
+
+ControlAsync = _reflection.GeneratedProtocolMessageType('ControlAsync', (_message.Message,), {
+  'DESCRIPTOR' : _CONTROLASYNC,
+  '__module__' : 'messages_pb2'
+  # @@protoc_insertion_point(class_scope:lilsim.ControlAsync)
+  })
+_sym_db.RegisterMessage(ControlAsync)
 
 ControlRequest = _reflection.GeneratedProtocolMessageType('ControlRequest', (_message.Message,), {
   'DESCRIPTOR' : _CONTROLREQUEST,
