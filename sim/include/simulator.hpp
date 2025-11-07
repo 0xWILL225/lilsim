@@ -14,11 +14,6 @@ namespace comm {
 
 namespace sim {
 
-struct CarInput {
-  double delta{0.0}; // steering angle
-  double ax{0.0};    // longitudinal acceleration
-};
-
 class Simulator {
 public:
   explicit Simulator(scene::SceneDB& db); // Defined in .cpp to handle unique_ptr with forward-declared type
@@ -26,8 +21,9 @@ public:
 
   void start(double dt);
   void stop();
-  void setInput(CarInput const& u) {
-    m_input.store(u, std::memory_order_relaxed);
+  void setInput(scene::CarInput const& u) {
+    m_inputUpdateRequested.store(true, std::memory_order_relaxed);
+    m_newInput = u;
   }
   void pause() {
     m_paused.store(true, std::memory_order_relaxed);
@@ -47,11 +43,15 @@ public:
   uint64_t getTicksRemaining() const {
     return m_stepTarget.load(std::memory_order_relaxed);
   }
-  void reset(double wheelbase, double v_max, double delta_max, double dt) {
+  void reset(double wheelbase, double v_max, double ax_max, double steer_rate_max, 
+             double delta_max, scene::SteeringMode steering_mode, double dt) {
     m_resetRequested.store(true, std::memory_order_relaxed);
     m_newParams.wheelbase = wheelbase;
     m_newParams.v_max = v_max;
+    m_newParams.ax_max = ax_max;
+    m_newParams.steer_rate_max = steer_rate_max;
     m_newParams.delta_max = delta_max;
+    m_newParams.steering_mode = steering_mode;
     m_newParams.dt = dt;
   }
   void setCones(const std::vector<scene::Cone>& cones) {
@@ -97,7 +97,10 @@ private:
   struct ResetParams {
     double wheelbase{common::CarDefaults::wheelbase};
     double v_max{common::CarDefaults::v_max};
+    double ax_max{common::CarDefaults::ax_max};
+    double steer_rate_max{common::CarDefaults::steer_rate_max};
     double delta_max{common::CarDefaults::delta_max};
+    scene::SteeringMode steering_mode{scene::SteeringMode::Rate};
     double dt{common::CarDefaults::dt};
   };
 
@@ -107,15 +110,16 @@ private:
   std::atomic<bool> m_resetRequested{false};
   std::atomic<bool> m_conesUpdateRequested{false};
   std::atomic<bool> m_startPoseUpdateRequested{false};
+  std::atomic<bool> m_inputUpdateRequested{false};
   std::atomic<uint64_t> m_stepTarget{0}; // 0 = run continuously, >0 = step mode
   std::thread m_thread;
-  std::atomic<CarInput> m_input;
   scene::Scene m_state; // reuse Scene as holder for car state
   double m_dt{0.0};     // timestep, set by start()
   ResetParams m_newParams;
   std::vector<scene::Cone> m_newCones;
   common::SE2 m_newStartPose{0.0, 0.0, 0.0};
   common::SE2 m_startPose{0.0, 0.0, 0.0}; // Current starting pose
+  scene::CarInput m_newInput{0.0, 0.0};     // New input from setInput()
 
   // Communication
   std::unique_ptr<comm::CommServer> m_commServer;
@@ -123,7 +127,7 @@ private:
   std::atomic<bool> m_syncMode{false};      // true = synchronous, false = asynchronous
   std::atomic<uint32_t> m_controlPeriodMs{100}; // Control period in milliseconds (sync mode)
   std::atomic<uint32_t> m_controlPeriodTicks{10}; // Control period in ticks (computed from ms and dt)
-  CarInput m_lastControlInput{0.0, 0.0};    // Last control from client
+  scene::CarInput m_lastControlInput{0.0, 0.0};    // Last control from client (ZMQ)
 };
 
 } // namespace sim

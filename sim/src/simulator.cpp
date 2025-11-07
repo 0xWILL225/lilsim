@@ -54,7 +54,7 @@ void Simulator::enableComm(bool enable) {
     if (m_commServer->start()) {
       m_commEnabled.store(true, std::memory_order_relaxed);
       // Reset control input to zero when ZMQ is enabled
-      m_lastControlInput = CarInput{0.0, 0.0};
+      m_lastControlInput = scene::CarInput{0.0, 0.0};
       // Reset sync mode to async
       m_syncMode.store(false, std::memory_order_relaxed);
       spdlog::info("[sim] Communication enabled");
@@ -81,6 +81,11 @@ void Simulator::loop(double dt) {
     m_state.car.pose = m_startPose;
     m_state.car.v = 0.0;
     m_state.car.yaw_rate = 0.0;
+    
+    // Reset control inputs
+    m_state.car_input.delta = 0.0;
+    m_state.car_input.delta_dot = 0.0;
+    m_state.car_input.ax = 0.0;
 
     m_db.publish(m_state);
     tick = 0;
@@ -113,6 +118,20 @@ void Simulator::loop(double dt) {
     // Check for start pose update request
     if (m_startPoseUpdateRequested.exchange(false, std::memory_order_relaxed)) {
       m_startPose = m_newStartPose;
+    }
+    
+    // Check for input update request (from manual setInput)
+    if (m_inputUpdateRequested.exchange(false, std::memory_order_relaxed)) {
+      // In Rate mode, preserve the integrated delta (steering angle state)
+      // Only update the rate and acceleration inputs
+      if (m_state.steering_mode == scene::SteeringMode::Rate) {
+        double preserved_delta = m_state.car_input.delta;
+        m_state.car_input = m_newInput;
+        m_state.car_input.delta = preserved_delta;
+      } else {
+        // In Angle mode, just copy everything
+        m_state.car_input = m_newInput;
+      }
     }
     
     // Check for cone update request
@@ -163,6 +182,14 @@ void Simulator::loop(double dt) {
               m_newParams.wheelbase = cmd.params().wheelbase();
               m_newParams.v_max = cmd.params().v_max();
               m_newParams.delta_max = cmd.params().delta_max();
+              m_newParams.ax_max = cmd.params().ax_max();
+              m_newParams.steer_rate_max = cmd.params().steer_rate_max();
+              // Convert protobuf steering mode enum to scene::SteeringMode
+              if (cmd.params().steering_mode() == lilsim::SteeringInputMode::ANGLE) {
+                m_newParams.steering_mode = scene::SteeringMode::Angle;
+              } else {
+                m_newParams.steering_mode = scene::SteeringMode::Rate;
+              }
               m_resetRequested.store(true, std::memory_order_relaxed);
               msg = "Parameters set, reset requested";
             } else {
@@ -188,6 +215,14 @@ void Simulator::loop(double dt) {
               m_newParams.wheelbase = cmd.params().wheelbase();
               m_newParams.v_max = cmd.params().v_max();
               m_newParams.delta_max = cmd.params().delta_max();
+              m_newParams.ax_max = cmd.params().ax_max();
+              m_newParams.steer_rate_max = cmd.params().steer_rate_max();
+              // Convert protobuf steering mode enum to scene::SteeringMode
+              if (cmd.params().steering_mode() == lilsim::SteeringInputMode::ANGLE) {
+                m_newParams.steering_mode = scene::SteeringMode::Angle;
+              } else {
+                m_newParams.steering_mode = scene::SteeringMode::Rate;
+              }
               m_resetRequested.store(true, std::memory_order_relaxed);
               msg = "Initialized with new parameters";
             } else {
@@ -213,7 +248,11 @@ void Simulator::loop(double dt) {
       // Apply new parameters
       m_state.car =
         scene::CarState(m_newParams.wheelbase, m_newParams.wheelbase / 2.0,
-                        m_newParams.v_max, m_newParams.delta_max);
+                        m_newParams.v_max);
+      m_state.car_input.ax_max = m_newParams.ax_max;
+      m_state.car_input.steer_rate_max = m_newParams.steer_rate_max;
+      m_state.car_input.delta_max = m_newParams.delta_max;
+      m_state.steering_mode = m_newParams.steering_mode;
       dt = m_newParams.dt;
       m_dt = dt;
       // Recompute control period in ticks based on new dt
@@ -245,7 +284,7 @@ void Simulator::loop(double dt) {
     }
 
     // Determine control input based on mode
-    CarInput u;
+    scene::CarInput u;
     
     if (m_commEnabled.load(std::memory_order_relaxed) && m_commServer) {
       bool syncMode = m_syncMode.load(std::memory_order_relaxed);
@@ -296,6 +335,7 @@ void Simulator::loop(double dt) {
             if (m_commServer->requestControl(request, reply, pollInterval)) {
               gotReply = true;
               u.delta = reply.steer_angle();
+              u.delta_dot = reply.steer_rate();
               u.ax = reply.ax();
               m_lastControlInput = u;
               break;
@@ -327,6 +367,7 @@ void Simulator::loop(double dt) {
         auto asyncControl = m_commServer->pollAsyncControl();
         if (asyncControl.has_value()) {
           u.delta = asyncControl->steer_angle();
+          u.delta_dot = asyncControl->steer_rate();
           u.ax = asyncControl->ax();
           m_lastControlInput = u;
         } else {
@@ -335,13 +376,35 @@ void Simulator::loop(double dt) {
         }
       }
     } else {
-      // No comm: use manual input
-      u = m_input.load(std::memory_order_relaxed);
+      // No comm: use manual input from scene
+      u = m_state.car_input;
     }
 
-    // Clamp steering angle to limits
-    u.delta =
-      std::clamp(u.delta, -m_state.car.delta_max, m_state.car.delta_max);
+    // Apply steering based on mode
+    if (m_state.steering_mode == scene::SteeringMode::Rate) {
+      // Steering rate mode: integrate delta_dot to get delta
+      // Clamp rate input
+      u.delta_dot = std::clamp(u.delta_dot, -m_state.car_input.steer_rate_max, 
+                                             m_state.car_input.steer_rate_max);
+      // Integrate
+      m_state.car_input.delta += u.delta_dot * dt;
+      // Clamp angle
+      m_state.car_input.delta = std::clamp(m_state.car_input.delta, 
+                                           -m_state.car_input.delta_max, 
+                                            m_state.car_input.delta_max);
+      // Update rate in state for visualization
+      m_state.car_input.delta_dot = u.delta_dot;
+    } else {
+      // Steering angle mode: use delta directly
+      // Clamp angle input
+      m_state.car_input.delta = std::clamp(u.delta, -m_state.car_input.delta_max, 
+                                                      m_state.car_input.delta_max);
+      // Don't update delta_dot in Angle mode
+    }
+    
+    // Clamp acceleration
+    m_state.car_input.ax = std::clamp(u.ax, -m_state.car_input.ax_max, 
+                                             m_state.car_input.ax_max);
 
     // simple kinematic bicycle (minimal)
     const double yaw = m_state.car.pose.yaw();
@@ -349,8 +412,8 @@ void Simulator::loop(double dt) {
 
     const double dx = vx * std::cos(yaw);
     const double dy = vx * std::sin(yaw);
-    const double dyaw = (vx / m_state.car.wheelbase) * std::tan(u.delta);
-    const double dv = u.ax;
+    const double dyaw = (vx / m_state.car.wheelbase) * std::tan(m_state.car_input.delta);
+    const double dv = m_state.car_input.ax;
 
     double x = m_state.car.pose.x() + dt * dx;
     double y = m_state.car.pose.y() + dt * dy;

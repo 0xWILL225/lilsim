@@ -38,7 +38,8 @@ message StateUpdate {
 message ControlAsync {
   Header header      = 1;
   double steer_angle = 2; // [rad], bicycle front wheel
-  double ax          = 3; // [m/s^2]
+  double steer_rate  = 3; // [rad/s], steering rate (alternative input)
+  double ax          = 4; // [m/s^2]
 }
 
 // ============ Control sync ============
@@ -51,7 +52,8 @@ message ControlRequest {
 message ControlReply {
   Header header      = 1; // tick this control applies to
   double steer_angle = 2; // [rad], bicycle front wheel
-  double ax          = 3; // [m/s^2]
+  double steer_rate  = 3; // [rad/s], steering rate (alternative input)
+  double ax          = 4; // [m/s^2]
 }
 
 // ============ Admin RPC ============
@@ -66,12 +68,20 @@ enum AdminCommandType {
   SET_MODE = 6;  // Set sync/async mode
 }
 
+enum SteeringInputMode {
+  ANGLE = 0;  // Steering angle is the control input
+  RATE  = 1;  // Steering rate is the control input
+}
+
 message SimParams {
-  double dt         = 1;
-  double wheelbase  = 2;
-  double v_max      = 3;
-  double delta_max  = 4;
-  double Lf         = 5;
+  double dt              = 1;
+  double wheelbase       = 2;
+  double v_max           = 3;
+  double delta_max       = 4;
+  double Lf              = 5;
+  double ax_max          = 6;
+  double steer_rate_max  = 7;
+  SteeringInputMode steering_mode = 8;
 }
 
 message AdminCommand {

@@ -1,6 +1,7 @@
 #include "viz.hpp"
 #include "KeyBindings.hpp"
 #include "TrackLoader.hpp"
+#include "TextureManager.hpp"
 #include "comm/CommServer.hpp"
 
 #include <GLFW/glfw3native.h>
@@ -351,6 +352,12 @@ bool Application::initWebGPU() {
 
   wgpuSurfaceConfigure(m_surface, &config);
   fprintf(stderr, "[DEBUG] Surface configured\n");
+  
+  // Initialize TextureManager
+  fprintf(stderr, "[DEBUG] Initializing TextureManager...\n");
+  TextureManager::getInstance().initialize(m_device, m_queue);
+  fprintf(stderr, "[DEBUG] TextureManager initialized\n");
+  
   fprintf(stderr, "[DEBUG] WebGPU initialization complete\n");
 
   return true;
@@ -646,6 +653,7 @@ void Application::terminateGLFW() {
  * This ensures proper cleanup of all resources.
  */
 void Application::terminate() {
+  TextureManager::getInstance().cleanup();
   terminateImGui();
   terminateWebGPU();
   terminateGLFW();
@@ -719,7 +727,8 @@ void Application::handleInput() {
   static bool resetKeyWasPressed = false;
   bool resetKeyPressed = glfwGetKey(m_window, gKeyBindings.resetSimulation) == GLFW_PRESS;
   if (resetKeyPressed && !resetKeyWasPressed) {
-    m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiDeltaMax, m_uiDt);
+    m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiAxMax, m_uiSteerRateMax, 
+                     m_uiDeltaMax, m_uiSteeringMode, m_uiDt);
   }
   resetKeyWasPressed = resetKeyPressed;
 
@@ -732,7 +741,7 @@ void Application::handleInput() {
     m_keyD = glfwGetKey(m_window, gKeyBindings.carSteerRight) == GLFW_PRESS;
 
     // Construct control input
-    sim::CarInput input{};
+    scene::CarInput input{};
 
     // Acceleration:
     const double accel = 7.0;
@@ -743,14 +752,26 @@ void Application::handleInput() {
     else
       input.ax = 0.0;
 
-    // Steering: +0.5 rad left, -0.5 rad right
-    const double steer_angle = 0.5;
-    if (m_keyA)
-      input.delta = steer_angle;
-    else if (m_keyD)
-      input.delta = -steer_angle;
-    else
-      input.delta = 0.0;
+    // Steering: depends on mode
+    if (m_uiSteeringMode == scene::SteeringMode::Rate) {
+      // Steering rate mode: A/D sets rate
+      const double steer_rate = m_uiSteerRateMax;  // rad/s
+      if (m_keyA)
+        input.delta_dot = steer_rate;   // Positive rate = steer left
+      else if (m_keyD)
+        input.delta_dot = -steer_rate;  // Negative rate = steer right
+      else
+        input.delta_dot = 0.0;
+    } else {
+      // Steering angle mode: A/D sets angle directly
+      const double steer_angle = 0.5;  // rad
+      if (m_keyA)
+        input.delta = steer_angle;
+      else if (m_keyD)
+        input.delta = -steer_angle;
+      else
+        input.delta = 0.0;
+    }
 
     // Send to simulator
     m_simulator.setInput(input);
@@ -860,7 +881,8 @@ void Application::setupPanels() {
 
     // Reset button
     if (ImGui::Button("Reset", ImVec2(-1, 30))) {
-      m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiDeltaMax, m_uiDt);
+      m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiAxMax, m_uiSteerRateMax,
+                       m_uiDeltaMax, m_uiSteeringMode, m_uiDt);
     }
   });
 
@@ -1005,13 +1027,49 @@ void Application::setupPanels() {
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
-    // Max Steering
+    // Max Acceleration
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+    ImGui::BeginChild("##axmax_param", ImVec2(0, 60), true);
+    ImGui::Text("Max Acceleration (m/s^2)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##axmax", &m_uiAxMax, 1.0f, 5.0f, "%.1f")) {
+      m_uiAxMax = std::max(0.1f, m_uiAxMax);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // Max Steering Angle
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
     ImGui::BeginChild("##deltamax_param", ImVec2(0, 60), true);
-    ImGui::Text("Max Steering (rad)");
+    ImGui::Text("Max Steering Angle (rad)");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputFloat("##deltamax", &m_uiDeltaMax, 0.1f, 0.5f, "%.3f")) {
       m_uiDeltaMax = std::max(0.01f, m_uiDeltaMax);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // Max Steering Rate
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+    ImGui::BeginChild("##steerratemax_param", ImVec2(0, 60), true);
+    ImGui::Text("Max Steering Rate (rad/s)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##steerratemax", &m_uiSteerRateMax, 0.5f, 1.0f, "%.2f")) {
+      m_uiSteerRateMax = std::max(0.1f, m_uiSteerRateMax);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // Steering Input Mode
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+    ImGui::BeginChild("##steering_mode_param", ImVec2(0, 70), true);
+    ImGui::Text("Steering Input Mode:");
+    if (ImGui::RadioButton("Angle", m_uiSteeringMode == scene::SteeringMode::Angle)) {
+      m_uiSteeringMode = scene::SteeringMode::Angle;
+    }
+    ImGui::SameLine();
+    if (ImGui::RadioButton("Rate", m_uiSteeringMode == scene::SteeringMode::Rate)) {
+      m_uiSteeringMode = scene::SteeringMode::Rate;
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();

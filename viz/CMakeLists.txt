@@ -21,6 +21,7 @@ add_library(viz STATIC
   src/viz.cpp
   src/KeyBindings.cpp
   src/MarkerSystem.cpp
+  src/TextureManager.cpp
   src/panels/SidePanel.cpp
   src/panels/ViewportPanel.cpp
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp

@@ -8,27 +8,40 @@
 
 namespace scene {
 
+enum class SteeringMode {
+  Angle,  // Steering angle is the control input
+  Rate    // Steering rate is the control input, angle is integrated
+};
+
+struct CarInput {
+  double delta{0.0};      // steering angle (radians) - state when Rate mode, input when Angle mode
+  double delta_dot{0.0};  // steering rate (rad/s) - input when Rate mode
+  double ax{0.0};         // longitudinal acceleration (m/s^2)
+  
+  // Input limits
+  double delta_max{common::CarDefaults::delta_max};           // max steering angle magnitude
+  double steer_rate_max{common::CarDefaults::steer_rate_max}; // max steering rate magnitude
+  double ax_max{common::CarDefaults::ax_max};                 // max acceleration magnitude
+};
+
 struct CarState {
 
   CarState(double wheelbase_ = common::CarDefaults::wheelbase,
            double Lf_ = common::CarDefaults::Lf,
-           double v_max_ = common::CarDefaults::v_max,
-           double delta_max_ = common::CarDefaults::delta_max)
+           double v_max_ = common::CarDefaults::v_max)
     : wheelbase(wheelbase_)
     , Lf(Lf_)
     , Lr(wheelbase_ - Lf_)
-    , v_max(v_max_)
-    , delta_max(delta_max_) {
+    , v_max(v_max_) {
     assert(Lf > 0.0 && Lf < wheelbase && Lr > 0.0 && Lr < wheelbase);
     assert(v_max > 0.0);
-    assert(delta_max > 0.0);
   }
 
   double wheelbase;
   double Lf;
   double Lr;
-  double v_max;     // maximum velocity
-  double delta_max; // maximum steering angle magnitude
+  double v_max;     // maximum velocity (state limit)
+  
 
   common::SE2 pose;
   double v{0.0};
@@ -62,6 +75,8 @@ struct Cone {
 
 struct Scene {
   CarState car;
+  CarInput car_input;           // Current control input/state
+  SteeringMode steering_mode{SteeringMode::Rate};  // Default to Rate mode
   std::vector<Cone> cones;
 };
 

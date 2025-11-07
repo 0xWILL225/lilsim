@@ -34,7 +34,7 @@ class LilsimClient:
         
         # Or register sync control callback
         def my_controller(request):
-            return (0.1, 2.0)  # (steer_angle, ax)
+            return (0.1, 0.0, 2.0)  # (steer_angle, steer_rate, ax)
         client.register_sync_controller(my_controller)
         
         client.start()  # Start background threads
@@ -67,7 +67,7 @@ class LilsimClient:
         self.control_thread: Optional[threading.Thread] = None
         
         # Last control for async mode
-        self.last_control = (0.0, 0.0)  # (steer_angle, ax)
+        self.last_control = (0.0, 0.0, 0.0)  # (steer_angle, steer_rate, ax)
         
     def connect(self):
         """Connect to all simulator endpoints."""
@@ -132,11 +132,12 @@ class LilsimClient:
         self.state_callbacks.append(callback)
         logger.info(f"Registered state callback: {callback.__name__}")
         
-    def register_sync_controller(self, controller: Callable[[messages_pb2.ControlRequest], tuple[float, float]]):
+    def register_sync_controller(self, controller: Callable[[messages_pb2.ControlRequest], tuple[float, float, float]]):
         """Register a controller for synchronous mode.
         
         Args:
-            controller: Function that takes ControlRequest and returns (steer_angle, ax)
+            controller: Function that takes ControlRequest and returns (steer_angle, steer_rate, ax)
+                       The simulator will use the appropriate steering input based on its current mode
         """
         self.sync_controller = controller
         logger.info(f"Registered sync controller: {controller.__name__}")
@@ -145,14 +146,16 @@ class LilsimClient:
         if self.control_dealer is None:
             self.connect_control_sync()
             
-    def send_control_async(self, steer_angle: float, ax: float):
+    def send_control_async(self, steer_angle: float = 0.0, steer_rate: float = 0.0, ax: float = 0.0):
         """Send control command for async mode.
         
         The simulator must be in async mode for this to take effect.
         Controls are published on the async control socket (port 5559).
+        The simulator will use either steer_angle or steer_rate based on its current mode.
         
         Args:
-            steer_angle: Steering angle in radians
+            steer_angle: Steering angle in radians (used in Angle mode)
+            steer_rate: Steering rate in rad/s (used in Rate mode)
             ax: Longitudinal acceleration in m/s^2
         """
         if self.control_async_pub is None:
@@ -163,12 +166,13 @@ class LilsimClient:
         control = messages_pb2.ControlAsync()
         control.header.version = 1
         control.steer_angle = steer_angle
+        control.steer_rate = steer_rate
         control.ax = ax
         
         self.control_async_pub.send(control.SerializeToString())
         
         # Also store for sync mode fallback
-        self.last_control = (steer_angle, ax)
+        self.last_control = (steer_angle, steer_rate, ax)
         
     def _state_listener_thread(self):
         """Background thread that listens for state updates."""
@@ -216,6 +220,7 @@ class LilsimClient:
                         reply.header.sim_time = 0.0
                         reply.header.version = 1
                         reply.steer_angle = 0.0
+                        reply.steer_rate = 0.0
                         reply.ax = 0.0
                         self.control_dealer.send(reply.SerializeToString())
                         continue
@@ -223,12 +228,12 @@ class LilsimClient:
                     # Get control from controller or use last control
                     if self.sync_controller is not None:
                         try:
-                            steer_angle, ax = self.sync_controller(control_request)
+                            steer_angle, steer_rate, ax = self.sync_controller(control_request)
                         except Exception as e:
                             logger.error(f"Error in sync controller: {e}")
-                            steer_angle, ax = self.last_control
+                            steer_angle, steer_rate, ax = self.last_control
                     else:
-                        steer_angle, ax = self.last_control
+                        steer_angle, steer_rate, ax = self.last_control
                     
                     # Send reply
                     reply = messages_pb2.ControlReply()
@@ -236,6 +241,7 @@ class LilsimClient:
                     reply.header.sim_time = control_request.header.sim_time
                     reply.header.version = 1
                     reply.steer_angle = steer_angle
+                    reply.steer_rate = steer_rate
                     reply.ax = ax
                     
                     self.control_dealer.send(reply.SerializeToString())
@@ -404,7 +410,9 @@ class LilsimClient:
         return reply.success
         
     def set_params(self, dt: float = None, wheelbase: float = None, 
-                   v_max: float = None, delta_max: float = None, Lf: float = None) -> bool:
+                   v_max: float = None, delta_max: float = None, Lf: float = None,
+                   ax_max: float = None, steer_rate_max: float = None,
+                   steering_mode: str = None) -> bool:
         """Set simulation parameters.
         
         Args:
@@ -413,6 +421,9 @@ class LilsimClient:
             v_max: Maximum velocity in m/s
             delta_max: Maximum steering angle in radians
             Lf: Distance from CG to front axle in meters
+            ax_max: Maximum acceleration in m/s^2
+            steer_rate_max: Maximum steering rate in rad/s
+            steering_mode: 'angle' or 'rate' (None to keep current)
             
         Returns:
             True if successful
@@ -428,6 +439,17 @@ class LilsimClient:
             params.delta_max = delta_max
         if Lf is not None:
             params.Lf = Lf
+        if ax_max is not None:
+            params.ax_max = ax_max
+        if steer_rate_max is not None:
+            params.steer_rate_max = steer_rate_max
+        if steering_mode is not None:
+            if steering_mode.lower() == 'angle':
+                params.steering_mode = messages_pb2.ANGLE
+            elif steering_mode.lower() == 'rate':
+                params.steering_mode = messages_pb2.RATE
+            else:
+                logger.warning(f"Invalid steering_mode '{steering_mode}', ignoring")
             
         reply = self._send_admin_command(messages_pb2.SET_PARAMS, params=params)
         return reply.success

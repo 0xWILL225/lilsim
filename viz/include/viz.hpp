@@ -92,7 +92,10 @@ private:
   // UI state for simulation parameters
   float m_uiWheelbase = static_cast<float>(common::CarDefaults::wheelbase);
   float m_uiVMax = static_cast<float>(common::CarDefaults::v_max);
+  float m_uiAxMax = static_cast<float>(common::CarDefaults::ax_max);
+  float m_uiSteerRateMax = static_cast<float>(common::CarDefaults::steer_rate_max);
   float m_uiDeltaMax = static_cast<float>(common::CarDefaults::delta_max);
+  scene::SteeringMode m_uiSteeringMode = scene::SteeringMode::Rate;
   float m_uiDt = static_cast<float>(common::CarDefaults::dt);
   int m_stepN = 10;
 
