@@ -10,8 +10,7 @@ int main() {
   // Initialize scene and simulator
   scene::SceneDB db;
   sim::Simulator sim(db);
-  double dt = 1.0 / 200.0;
-  sim.start(dt);
+  sim.start();
   fprintf(stderr, "[DEBUG] Simulator started\n");
 
   // Initialize visualization

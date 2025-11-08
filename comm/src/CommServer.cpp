@@ -279,21 +279,57 @@ void MarkerSubscriber::stop() {
   spdlog::info("[comm] MarkerSubscriber stopped");
 }
 
-std::optional<lilsim::MarkerArray> MarkerSubscriber::pollMarkers() {
+MarkerSubscriber::PollResult MarkerSubscriber::poll() {
+  PollResult result;
+  result.type = MessageType::None;
+  
   if (!m_running.load(std::memory_order_relaxed) || !m_markerSub) {
-    return std::nullopt;
+    return result;
   }
 
   try {
-    lilsim::MarkerArray markers;
-    if (recvProto(*m_markerSub, markers, zmq::recv_flags::dontwait)) {
-      return markers;
+    // Receive topic frame (non-blocking)
+    zmq::message_t topic_msg;
+    auto res = m_markerSub->recv(topic_msg, zmq::recv_flags::dontwait);
+    if (!res) {
+      return result;
+    }
+    
+    std::string topic(static_cast<char*>(topic_msg.data()), topic_msg.size());
+    
+    // Receive data frame (non-blocking)
+    zmq::message_t data_msg;
+    res = m_markerSub->recv(data_msg, zmq::recv_flags::dontwait);
+    if (!res) {
+      spdlog::warn("[comm] Received topic frame but no data frame");
+      return result;
+    }
+    
+    // Parse based on topic
+    if (topic == "MARKERS") {
+      lilsim::MarkerArray markers;
+      if (markers.ParseFromArray(data_msg.data(), static_cast<int>(data_msg.size()))) {
+        result.type = MessageType::MarkerArray;
+        result.marker_array = std::move(markers);
+      } else {
+        spdlog::error("[comm] Failed to parse MarkerArray");
+      }
+    } else if (topic == "COMMAND") {
+      lilsim::MarkerCommand command;
+      if (command.ParseFromArray(data_msg.data(), static_cast<int>(data_msg.size()))) {
+        result.type = MessageType::MarkerCommand;
+        result.marker_command = std::move(command);
+      } else {
+        spdlog::error("[comm] Failed to parse MarkerCommand");
+      }
+    } else {
+      spdlog::warn("[comm] Unknown marker message topic: {}", topic);
     }
   } catch (const zmq::error_t& e) {
-    spdlog::error("[comm] Error polling markers: {}", e.what());
+    spdlog::error("[comm] Error polling marker messages: {}", e.what());
   }
 
-  return std::nullopt;
+  return result;
 }
 
 } // namespace comm

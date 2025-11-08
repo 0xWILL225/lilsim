@@ -744,7 +744,7 @@ void Application::handleInput() {
     scene::CarInput input{};
 
     // Acceleration:
-    const double accel = 7.0;
+    const double accel = m_uiAxMax;
     if (m_keyW)
       input.ax = accel;
     else if (m_keyS)
@@ -753,7 +753,8 @@ void Application::handleInput() {
       input.ax = 0.0;
 
     // Steering: depends on mode
-    if (m_uiSteeringMode == scene::SteeringMode::Rate) {
+    const scene::Scene& scene = m_sceneDB.snapshot();
+    if (scene.steering_mode == scene::SteeringMode::Rate) {
       // Steering rate mode: A/D sets rate
       const double steer_rate = m_uiSteerRateMax;  // rad/s
       if (m_keyA)
@@ -850,7 +851,7 @@ void Application::setupPanels() {
     
     // Always allow Resume - let simulator detect reconnection
     // (No longer disable Resume when client is disconnected in sync mode)
-    if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(140, 30))) {
+    if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(-1, 30))) {
       if (isPaused) {
         m_simulator.resume();
       } else {
@@ -860,22 +861,27 @@ void Application::setupPanels() {
     
     ImGui::PopStyleColor(3);
 
+    
+    // Step controls: text + input on line 1, buttons on line 2
+    ImGui::AlignTextToFramePadding();  // Align text vertically with InputInt
+    ImGui::Text("Step size (N):");
     ImGui::SameLine();
-    if (ImGui::Button("Step", ImVec2(70, 30))) {
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputInt("##StepN", &m_stepN, 0, 0); 
+    m_stepN = std::max(1, m_stepN);
+
+    // Two buttons filling the width
+    float buttonWidth = ImGui::GetContentRegionAvail().x / 2.0f - 4.0f;
+    if (ImGui::Button("Step N", ImVec2(buttonWidth, 30))) {
       m_simulator.pause();
-      m_simulator.step(1);
+      m_simulator.step((uint64_t)m_stepN);
       m_simulator.resume();
     }
 
-    // StepN with input field
-    ImGui::SetNextItemWidth(100);
-    ImGui::InputInt("##StepN", &m_stepN, 1, 100);
-    m_stepN = std::max(1, m_stepN);
-
     ImGui::SameLine();
-    if (ImGui::Button("Step N", ImVec2(70, 30))) {
+    if (ImGui::Button("Step 1", ImVec2(-1, 30))) {
       m_simulator.pause();
-      m_simulator.step((uint64_t)m_stepN);
+      m_simulator.step(1);
       m_simulator.resume();
     }
 
@@ -1004,10 +1010,13 @@ void Application::setupPanels() {
   m_rightPanel.addSection("Parameters", [this]() {
     ImGui::Text("Apply on reset:");
     ImGui::Spacing();
+    
+    // Reduce padding for all parameter rows
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
 
     // Wheelbase
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::BeginChild("##wheelbase_param", ImVec2(0, 60), true);
+    ImGui::BeginChild("##wheelbase_param", ImVec2(0, 50), true);
     ImGui::Text("Wheelbase (m)");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputFloat("##wheelbase", &m_uiWheelbase, 0.1f, 1.0f, "%.2f")) {
@@ -1018,7 +1027,7 @@ void Application::setupPanels() {
 
     // Max Velocity
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##vmax_param", ImVec2(0, 60), true);
+    ImGui::BeginChild("##vmax_param", ImVec2(0, 50), true);
     ImGui::Text("Max Velocity (m/s)");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputFloat("##vmax", &m_uiVMax, 1.0f, 5.0f, "%.1f")) {
@@ -1029,7 +1038,7 @@ void Application::setupPanels() {
 
     // Max Acceleration
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##axmax_param", ImVec2(0, 60), true);
+    ImGui::BeginChild("##axmax_param", ImVec2(0, 50), true);
     ImGui::Text("Max Acceleration (m/s^2)");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputFloat("##axmax", &m_uiAxMax, 1.0f, 5.0f, "%.1f")) {
@@ -1040,7 +1049,7 @@ void Application::setupPanels() {
 
     // Max Steering Angle
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::BeginChild("##deltamax_param", ImVec2(0, 60), true);
+    ImGui::BeginChild("##deltamax_param", ImVec2(0, 50), true);
     ImGui::Text("Max Steering Angle (rad)");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputFloat("##deltamax", &m_uiDeltaMax, 0.1f, 0.5f, "%.3f")) {
@@ -1051,7 +1060,7 @@ void Application::setupPanels() {
 
     // Max Steering Rate
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##steerratemax_param", ImVec2(0, 60), true);
+    ImGui::BeginChild("##steerratemax_param", ImVec2(0, 50), true);
     ImGui::Text("Max Steering Rate (rad/s)");
     ImGui::SetNextItemWidth(-1);
     if (ImGui::InputFloat("##steerratemax", &m_uiSteerRateMax, 0.5f, 1.0f, "%.2f")) {
@@ -1060,9 +1069,21 @@ void Application::setupPanels() {
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
+
+    // Timestep
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+    ImGui::BeginChild("##dt_param", ImVec2(0, 50), true);
+    ImGui::Text("Timestep (s)");
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputFloat("##dt", &m_uiDt, 0.001f, 0.01f, "%.4f")) {
+      m_uiDt = std::clamp(m_uiDt, 0.0001f, 0.1f);
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
     // Steering Input Mode
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::BeginChild("##steering_mode_param", ImVec2(0, 70), true);
+    ImGui::BeginChild("##steering_mode_param", ImVec2(0, 50), true);
     ImGui::Text("Steering Input Mode:");
     if (ImGui::RadioButton("Angle", m_uiSteeringMode == scene::SteeringMode::Angle)) {
       m_uiSteeringMode = scene::SteeringMode::Angle;
@@ -1073,17 +1094,9 @@ void Application::setupPanels() {
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
-
-    // Timestep
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##dt_param", ImVec2(0, 60), true);
-    ImGui::Text("Timestep (s)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##dt", &m_uiDt, 0.001f, 0.01f, "%.4f")) {
-      m_uiDt = std::clamp(m_uiDt, 0.0001f, 0.1f);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    
+    // Pop the reduced padding style
+    ImGui::PopStyleVar();
 
     ImGui::Separator();
     ImGui::Text("Track Loading:");
@@ -1265,16 +1278,22 @@ void Application::setupPanels() {
  * @brief Renders the 2D simulation scene and panels.
  */
 void Application::render2D() {
-  // Poll for markers from ZMQ (if subscriber is active)
+  // Poll for markers and commands from ZMQ (if subscriber is active)
   if (m_markerSub && m_markerSub->isRunning()) {
-    auto markerArray = m_markerSub->pollMarkers();
-    if (markerArray.has_value()) {
-      const scene::Scene& scene = m_sceneDB.snapshot();
-      uint64_t tick = m_sceneDB.tick.load();
-      double simTime = tick * m_simulator.getDt();
-
-      // Add/update markers from the array
-      for (const auto& protoMarker : markerArray->markers()) {
+    uint64_t tick = m_sceneDB.tick.load();
+    double simTime = tick * m_simulator.getDt();
+    
+    // Poll all pending messages until none remain
+    while (true) {
+      auto result = m_markerSub->poll();
+      
+      if (result.type == comm::MarkerSubscriber::MessageType::None) {
+        break;  // No more messages
+      }
+      
+      if (result.type == comm::MarkerSubscriber::MessageType::MarkerArray) {
+        // Process marker array
+        for (const auto& protoMarker : result.marker_array->markers()) {
         Marker marker;
         
         // Convert proto marker to internal marker
@@ -1339,12 +1358,27 @@ void Application::render2D() {
         }
         
         m_markerSystem.addMarker(protoMarker.ns(), protoMarker.id(), marker, simTime);
+        }
+      } else if (result.type == comm::MarkerSubscriber::MessageType::MarkerCommand) {
+        // Process marker command
+        switch (result.marker_command->type()) {
+          case lilsim::MarkerCommandType::DELETE_MARKER:
+            m_markerSystem.deleteMarker(result.marker_command->ns(), result.marker_command->id());
+            break;
+          case lilsim::MarkerCommandType::DELETE_NAMESPACE:
+            m_markerSystem.deleteNamespace(result.marker_command->ns());
+            break;
+          case lilsim::MarkerCommandType::CLEAR_ALL:
+            m_markerSystem.clearAll();
+            break;
+          default:
+            break;
+        }
       }
     }
   }
 
   // Update marker system (handle TTL)
-  const scene::Scene& scene = m_sceneDB.snapshot();
   uint64_t tick = m_sceneDB.tick.load();
   double simTime = tick * m_simulator.getDt();
   m_markerSystem.update(simTime);

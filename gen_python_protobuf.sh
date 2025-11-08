@@ -1,0 +1,1 @@
+protoc --python_out=python_sdk/lilsim --proto_path=comm messages.proto

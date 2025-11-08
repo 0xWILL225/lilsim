@@ -286,11 +286,11 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
   // ===== HUD Overlay (bottom-right corner) =====
   // Fixed in screen space, not affected by camera zoom/pan
   
-  const float hud_margin_right = 20.0f;
-  const float hud_margin_bottom = 30.0f;
-  const float gap_between_elements = 20.0f;
-  const float bar_width = 30.0f * 1.5f;   // 45px (scaled 1.5x)
-  const float bar_height = 150.0f * 2.0f; // 300px (scaled 2x)
+  const float hud_margin_right = 10.0f;
+  const float hud_margin_bottom = 15.0f;
+  const float gap_between_elements = 10.0f;
+  const float bar_width = 30.0f;
+  const float bar_height = 240.0f;
   
   // Load steering wheel texture
   auto& texMgr = TextureManager::getInstance();
@@ -303,11 +303,16 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
     // Preserve aspect ratio of steering wheel texture
     // Original: 57×35 pixels (wider than tall)
     float aspect_ratio = static_cast<float>(wheelTexData->width) / static_cast<float>(wheelTexData->height);
-    const float wheel_height = 100.0f * 1.5f;  // 150px (scaled 1.5x)
+    const float wheel_height = 100.0f;
     const float wheel_width = wheel_height * aspect_ratio;  // Preserve aspect ratio
     
+    // Steering bar dimensions (calculated here to position wheel above it)
+    const float steering_bar_height = 30.0f;
+    const float steering_bar_gap = 30.0f;             // Gap between wheel and steering bar
+    
     const float wheel_center_x = x + width - hud_margin_right - gap_between_elements - bar_width - gap_between_elements - wheel_width * 0.5f;
-    const float wheel_center_y = y + height - hud_margin_bottom - wheel_height * 0.5f;
+    // Position wheel above the steering bar (which is at hud_margin_bottom)
+    const float wheel_center_y = y + height - hud_margin_bottom - steering_bar_height - steering_bar_gap - wheel_height * 0.5f;
     
     // Get steering angle directly from scene snapshot (no smoothing/interpolation)
     const float delta = static_cast<float>(scene.car_input.delta);  // radians
@@ -350,14 +355,12 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
       uv0, uv1, uv2, uv3
     );
     
-    // Draw horizontal steering bar below wheel
-    const float steering_bar_height = 30.0f * 1.5f;  // 45px (scaled 1.5x)
+    // Draw horizontal steering bar (positioned at bottom margin)
     const float steering_bar_width = wheel_width;     // Match steering wheel width
-    const float steering_bar_gap = 10.0f;             // Gap between wheel and bar
     
     const float steering_bar_center_x = wheel_center_x;
-    const float steering_bar_top_y = wheel_center_y + wheel_height * 0.5f + steering_bar_gap;
-    const float steering_bar_bottom_y = steering_bar_top_y + steering_bar_height;
+    const float steering_bar_bottom_y = y + height - hud_margin_bottom;
+    const float steering_bar_top_y = steering_bar_bottom_y - steering_bar_height;
     const float steering_bar_left_x = steering_bar_center_x - steering_bar_width * 0.5f;
     const float steering_bar_right_x = steering_bar_center_x + steering_bar_width * 0.5f;
     

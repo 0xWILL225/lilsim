@@ -15,11 +15,10 @@ Simulator::~Simulator() {
   stop();
 }
 
-void Simulator::start(double dt) {
+void Simulator::start() {
   if (m_running.exchange(true))
     return;
-  m_dt = dt;
-  m_thread = std::thread(&Simulator::loop, this, dt);
+  m_thread = std::thread(&Simulator::loop, this);
 }
 
 void Simulator::stop() {
@@ -71,7 +70,8 @@ void Simulator::enableComm(bool enable) {
   }
 }
 
-void Simulator::loop(double dt) {
+void Simulator::loop() {
+  double dt = m_params.dt;
   using clock = std::chrono::steady_clock;
   auto next = clock::now();
   uint64_t tick = 0;
@@ -178,17 +178,17 @@ void Simulator::loop(double dt) {
 
           case lilsim::AdminCommandType::SET_PARAMS:
             if (cmd.has_params()) {
-              m_newParams.dt = cmd.params().dt();
-              m_newParams.wheelbase = cmd.params().wheelbase();
-              m_newParams.v_max = cmd.params().v_max();
-              m_newParams.delta_max = cmd.params().delta_max();
-              m_newParams.ax_max = cmd.params().ax_max();
-              m_newParams.steer_rate_max = cmd.params().steer_rate_max();
+              m_params.dt = cmd.params().dt();
+              m_params.wheelbase = cmd.params().wheelbase();
+              m_params.v_max = cmd.params().v_max();
+              m_params.delta_max = cmd.params().delta_max();
+              m_params.ax_max = cmd.params().ax_max();
+              m_params.steer_rate_max = cmd.params().steer_rate_max();
               // Convert protobuf steering mode enum to scene::SteeringMode
               if (cmd.params().steering_mode() == lilsim::SteeringInputMode::ANGLE) {
-                m_newParams.steering_mode = scene::SteeringMode::Angle;
+                m_params.steering_mode = scene::SteeringMode::Angle;
               } else {
-                m_newParams.steering_mode = scene::SteeringMode::Rate;
+                m_params.steering_mode = scene::SteeringMode::Rate;
               }
               m_resetRequested.store(true, std::memory_order_relaxed);
               msg = "Parameters set, reset requested";
@@ -211,17 +211,17 @@ void Simulator::loop(double dt) {
 
           case lilsim::AdminCommandType::INIT:
             if (cmd.has_params()) {
-              m_newParams.dt = cmd.params().dt();
-              m_newParams.wheelbase = cmd.params().wheelbase();
-              m_newParams.v_max = cmd.params().v_max();
-              m_newParams.delta_max = cmd.params().delta_max();
-              m_newParams.ax_max = cmd.params().ax_max();
-              m_newParams.steer_rate_max = cmd.params().steer_rate_max();
+              m_params.dt = cmd.params().dt();
+              m_params.wheelbase = cmd.params().wheelbase();
+              m_params.v_max = cmd.params().v_max();
+              m_params.delta_max = cmd.params().delta_max();
+              m_params.ax_max = cmd.params().ax_max();
+              m_params.steer_rate_max = cmd.params().steer_rate_max();
               // Convert protobuf steering mode enum to scene::SteeringMode
               if (cmd.params().steering_mode() == lilsim::SteeringInputMode::ANGLE) {
-                m_newParams.steering_mode = scene::SteeringMode::Angle;
+                m_params.steering_mode = scene::SteeringMode::Angle;
               } else {
-                m_newParams.steering_mode = scene::SteeringMode::Rate;
+                m_params.steering_mode = scene::SteeringMode::Rate;
               }
               m_resetRequested.store(true, std::memory_order_relaxed);
               msg = "Initialized with new parameters";
@@ -247,14 +247,14 @@ void Simulator::loop(double dt) {
     if (m_resetRequested.exchange(false, std::memory_order_relaxed)) {
       // Apply new parameters
       m_state.car =
-        scene::CarState(m_newParams.wheelbase, m_newParams.wheelbase / 2.0,
-                        m_newParams.v_max);
-      m_state.car_input.ax_max = m_newParams.ax_max;
-      m_state.car_input.steer_rate_max = m_newParams.steer_rate_max;
-      m_state.car_input.delta_max = m_newParams.delta_max;
-      m_state.steering_mode = m_newParams.steering_mode;
-      dt = m_newParams.dt;
-      m_dt = dt;
+        scene::CarState(m_params.wheelbase, m_params.wheelbase / 2.0,
+                        m_params.v_max);
+      m_state.car_input.ax_max = m_params.ax_max;
+      m_state.car_input.steer_rate_max = m_params.steer_rate_max;
+      m_state.car_input.delta_max = m_params.delta_max;
+      m_state.steering_mode = m_params.steering_mode;
+      dt = m_params.dt;
+      
       // Recompute control period in ticks based on new dt
       uint32_t periodMs = m_controlPeriodMs.load(std::memory_order_relaxed);
       uint32_t ticks = static_cast<uint32_t>(std::max(1.0, periodMs / (dt * 1000.0)));
@@ -398,8 +398,7 @@ void Simulator::loop(double dt) {
       // Steering angle mode: use delta directly
       // Clamp angle input
       m_state.car_input.delta = std::clamp(u.delta, -m_state.car_input.delta_max, 
-                                                      m_state.car_input.delta_max);
-      // Don't update delta_dot in Angle mode
+                                                    m_state.car_input.delta_max);
     }
     
     // Clamp acceleration

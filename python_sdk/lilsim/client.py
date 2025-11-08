@@ -505,7 +505,7 @@ class LilsimClient:
         array.header.version = 1
         array.markers.append(marker)
         
-        self.marker_pub.send(array.SerializeToString())
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
         
     def publish_markers(self, markers: list):
         """Publish multiple markers at once.
@@ -517,7 +517,43 @@ class LilsimClient:
         array.header.version = 1
         array.markers.extend(markers)
         
-        self.marker_pub.send(array.SerializeToString())
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+    
+    def delete_marker(self, ns: str, marker_id: int):
+        """Delete a specific marker.
+        
+        Args:
+            ns: Namespace of the marker
+            marker_id: ID of the marker within the namespace
+        """
+        cmd = messages_pb2.MarkerCommand()
+        cmd.header.version = 1
+        cmd.type = messages_pb2.DELETE_MARKER
+        cmd.ns = ns
+        cmd.id = marker_id
+        
+        self.marker_pub.send_multipart([b"COMMAND", cmd.SerializeToString()])
+    
+    def delete_namespace(self, ns: str):
+        """Delete all markers in a namespace.
+        
+        Args:
+            ns: Namespace to delete
+        """
+        cmd = messages_pb2.MarkerCommand()
+        cmd.header.version = 1
+        cmd.type = messages_pb2.DELETE_NAMESPACE
+        cmd.ns = ns
+        
+        self.marker_pub.send_multipart([b"COMMAND", cmd.SerializeToString()])
+    
+    def clear_markers(self):
+        """Clear all markers from the visualization."""
+        cmd = messages_pb2.MarkerCommand()
+        cmd.header.version = 1
+        cmd.type = messages_pb2.CLEAR_ALL
+        
+        self.marker_pub.send_multipart([b"COMMAND", cmd.SerializeToString()])
         
     # ========== Convenience methods ==========
     

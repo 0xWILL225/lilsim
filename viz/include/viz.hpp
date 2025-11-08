@@ -70,8 +70,8 @@ private:
   sim::Simulator& m_simulator;
 
   GLFWwindow* m_window = nullptr;
-  int m_width = 800;
-  int m_height = 600;
+  int m_width = 1400;
+  int m_height = 800;
 
   WGPUInstance m_instance = nullptr;
   WGPUSurface m_surface = nullptr;
@@ -83,7 +83,7 @@ private:
   float m_clearColor[4] = {0.45f, 0.55f, 0.60f, 1.00f};
 
   // Frame rate limiting
-  double m_targetFrameTime = 1.0 / 30.0; // 30 FPS
+  double m_targetFrameTime = 1.0 / 60.0; // 60 FPS
   double m_lastFrameTime = 0.0;
 
   // Input state for car control

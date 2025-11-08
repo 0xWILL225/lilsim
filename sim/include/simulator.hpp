@@ -19,7 +19,7 @@ public:
   explicit Simulator(scene::SceneDB& db); // Defined in .cpp to handle unique_ptr with forward-declared type
   ~Simulator(); // Defined in .cpp to handle unique_ptr with forward-declared type
 
-  void start(double dt);
+  void start();
   void stop();
   void setInput(scene::CarInput const& u) {
     m_inputUpdateRequested.store(true, std::memory_order_relaxed);
@@ -38,7 +38,7 @@ public:
     m_stepTarget.store(numTicks, std::memory_order_relaxed);
   }
   double getDt() const {
-    return m_dt;
+    return m_params.dt;
   }
   uint64_t getTicksRemaining() const {
     return m_stepTarget.load(std::memory_order_relaxed);
@@ -46,13 +46,13 @@ public:
   void reset(double wheelbase, double v_max, double ax_max, double steer_rate_max, 
              double delta_max, scene::SteeringMode steering_mode, double dt) {
     m_resetRequested.store(true, std::memory_order_relaxed);
-    m_newParams.wheelbase = wheelbase;
-    m_newParams.v_max = v_max;
-    m_newParams.ax_max = ax_max;
-    m_newParams.steer_rate_max = steer_rate_max;
-    m_newParams.delta_max = delta_max;
-    m_newParams.steering_mode = steering_mode;
-    m_newParams.dt = dt;
+    m_params.wheelbase = wheelbase;
+    m_params.v_max = v_max;
+    m_params.ax_max = ax_max;
+    m_params.steer_rate_max = steer_rate_max;
+    m_params.delta_max = delta_max;
+    m_params.steering_mode = steering_mode;
+    m_params.dt = dt;
   }
   void setCones(const std::vector<scene::Cone>& cones) {
     m_conesUpdateRequested.store(true, std::memory_order_relaxed);
@@ -92,9 +92,9 @@ public:
   void probeConnection();
 
 private:
-  void loop(double dt);
+  void loop();
 
-  struct ResetParams {
+  struct Params { // Settable parameters
     double wheelbase{common::CarDefaults::wheelbase};
     double v_max{common::CarDefaults::v_max};
     double ax_max{common::CarDefaults::ax_max};
@@ -113,9 +113,8 @@ private:
   std::atomic<bool> m_inputUpdateRequested{false};
   std::atomic<uint64_t> m_stepTarget{0}; // 0 = run continuously, >0 = step mode
   std::thread m_thread;
-  scene::Scene m_state; // reuse Scene as holder for car state
-  double m_dt{0.0};     // timestep, set by start()
-  ResetParams m_newParams;
+  scene::Scene m_state;
+  Params m_params;
   std::vector<scene::Cone> m_newCones;
   common::SE2 m_newStartPose{0.0, 0.0, 0.0};
   common::SE2 m_startPose{0.0, 0.0, 0.0}; // Current starting pose

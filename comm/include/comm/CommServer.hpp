@@ -156,10 +156,28 @@ public:
   bool isRunning() const { return m_running.load(std::memory_order_relaxed); }
 
   /**
-   * @brief Poll for marker arrays (non-blocking)
-   * @return MarkerArray if one is pending, std::nullopt otherwise
+   * @brief Message type indicator for polled messages
    */
-  std::optional<lilsim::MarkerArray> pollMarkers();
+  enum class MessageType {
+    None,
+    MarkerArray,
+    MarkerCommand
+  };
+
+  /**
+   * @brief Result of polling for a message
+   */
+  struct PollResult {
+    MessageType type;
+    std::optional<lilsim::MarkerArray> marker_array;
+    std::optional<lilsim::MarkerCommand> marker_command;
+  };
+
+  /**
+   * @brief Poll for any marker-related message (non-blocking)
+   * @return PollResult containing the message type and data
+   */
+  PollResult poll();
 
 private:
   std::unique_ptr<zmq::context_t> m_context;

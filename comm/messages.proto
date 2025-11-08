@@ -113,7 +113,7 @@ message Scale2D {
   float y = 2;
 }
 
-message SE2 {
+message Pose {
   double x   = 1;
   double y   = 2;
   double yaw = 3;
@@ -137,11 +137,11 @@ message Marker {
   string     ns         = 1;  // namespace
   int32      id         = 2;  // unique within namespace
   MarkerType type       = 3;
-  SE2        pose       = 4;
+  Pose       pose       = 4;
   Color      color      = 5;
   Scale2D    scale      = 6;
   string     text       = 7;  // For TEXT markers
-  repeated SE2 points   = 8;  // For LINE_LIST, LINE_STRIP, POINTS
+  repeated Pose points  = 8;  // For LINE_LIST, LINE_STRIP, POINTS
   double     ttl_sec    = 9;  // Time-to-live (0 = infinite)
   bool       visible    = 10; // Visibility flag
 }
@@ -149,4 +149,17 @@ message Marker {
 message MarkerArray {
   Header header = 1;
   repeated Marker markers = 2;
+}
+
+enum MarkerCommandType {
+  DELETE_MARKER     = 0;
+  DELETE_NAMESPACE  = 1;
+  CLEAR_ALL         = 2;
+}
+
+message MarkerCommand {
+  Header header = 1;
+  MarkerCommandType type = 2;
+  string ns = 3;      // For DELETE_MARKER and DELETE_NAMESPACE
+  int32 id = 4;       // For DELETE_MARKER
 }
