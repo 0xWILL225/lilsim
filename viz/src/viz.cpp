@@ -1170,17 +1170,17 @@ void Application::setupPanels() {
               }
               
               // Add midline marker if midpoints are available
-              if (!trackData.midpoints.empty()) {
-                uint64_t tick = m_sceneDB.tick.load();
-                double simTime = tick * m_simulator.getDt();
-                Marker midlineMarker;
-                midlineMarker.type = MarkerType::LineStrip;
-                midlineMarker.points = trackData.midpoints;
-                midlineMarker.color = Color(255, 255, 0, 255); // Yellow
-                midlineMarker.scale = Scale2D(0.05f); // Line width
-                // No TTL - persists until replaced
-                m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
-              }
+              // if (!trackData.midpoints.empty()) {
+              //   uint64_t tick = m_sceneDB.tick.load();
+              //   double simTime = tick * m_simulator.getDt();
+              //   Marker midlineMarker;
+              //   midlineMarker.type = MarkerType::LineStrip;
+              //   midlineMarker.points = trackData.midpoints;
+              //   midlineMarker.color = Color(255, 255, 0, 255); // Yellow
+              //   midlineMarker.scale = Scale2D(0.05f); // Line width
+              //   // No TTL - persists until replaced
+              //   m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
+              // }
             }
           }
         }
@@ -1207,17 +1207,17 @@ void Application::setupPanels() {
           }
           
           // Add midline marker if midpoints are available
-          if (!trackData.midpoints.empty()) {
-            uint64_t tick = m_sceneDB.tick.load();
-            double simTime = tick * m_simulator.getDt();
-            Marker midlineMarker;
-            midlineMarker.type = MarkerType::LineStrip;
-            midlineMarker.points = trackData.midpoints;
-            midlineMarker.color = Color(255, 255, 0, 255); // Yellow
-            midlineMarker.scale = Scale2D(0.05f); // Line width
-            // No TTL - persists until replaced
-            m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
-          }
+          // if (!trackData.midpoints.empty()) {
+          //   uint64_t tick = m_sceneDB.tick.load();
+          //   double simTime = tick * m_simulator.getDt();
+          //   Marker midlineMarker;
+          //   midlineMarker.type = MarkerType::LineStrip;
+          //   midlineMarker.points = trackData.midpoints;
+          //   midlineMarker.color = Color(255, 255, 0, 255); // Yellow
+          //   midlineMarker.scale = Scale2D(0.05f); // Line width
+          //   // No TTL - persists until replaced
+          //   m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
+          // }
         }
       }
     }

@@ -19,7 +19,7 @@ extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::intern
 extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_Header_messages_2eproto;
 extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<3> scc_info_Marker_messages_2eproto;
 extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_Pose_messages_2eproto;
-extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_Scale2D_messages_2eproto;
+extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info__messages_2eproto;
 extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<2> scc_info_SceneState_messages_2eproto;
 extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_SimParams_messages_2eproto;
 extern PROTOBUF_INTERNAL_EXPORT_messages_2eproto ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_Vec2_messages_2eproto;
@@ -72,10 +72,10 @@ class ColorDefaultTypeInternal {
  public:
   ::PROTOBUF_NAMESPACE_ID::internal::ExplicitlyConstructed<Color> _instance;
 } _Color_default_instance_;
-class Scale2DDefaultTypeInternal {
+class DefaultTypeInternal {
  public:
-  ::PROTOBUF_NAMESPACE_ID::internal::ExplicitlyConstructed<Scale2D> _instance;
-} _Scale2D_default_instance_;
+  ::PROTOBUF_NAMESPACE_ID::internal::ExplicitlyConstructed<> _instance;
+} __default_instance_;
 class SE2DefaultTypeInternal {
  public:
   ::PROTOBUF_NAMESPACE_ID::internal::ExplicitlyConstructed<SE2> _instance;
@@ -232,7 +232,7 @@ static void InitDefaultsscc_info_Marker_messages_2eproto() {
     {{ATOMIC_VAR_INIT(::PROTOBUF_NAMESPACE_ID::internal::SCCInfoBase::kUninitialized), 3, 0, InitDefaultsscc_info_Marker_messages_2eproto}, {
       &scc_info_Pose_messages_2eproto.base,
       &scc_info_Color_messages_2eproto.base,
-      &scc_info_Scale2D_messages_2eproto.base,}};
+      &scc_info__messages_2eproto.base,}};
 
 static void InitDefaultsscc_info_MarkerArray_messages_2eproto() {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -293,19 +293,19 @@ static void InitDefaultsscc_info_SE2_messages_2eproto() {
 ::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_SE2_messages_2eproto =
     {{ATOMIC_VAR_INIT(::PROTOBUF_NAMESPACE_ID::internal::SCCInfoBase::kUninitialized), 0, 0, InitDefaultsscc_info_SE2_messages_2eproto}, {}};
 
-static void InitDefaultsscc_info_Scale2D_messages_2eproto() {
+static void InitDefaultsscc_info__messages_2eproto() {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
 
   {
-    void* ptr = &::lilsim::_Scale2D_default_instance_;
-    new (ptr) ::lilsim::Scale2D();
+    void* ptr = &::lilsim::__default_instance_;
+    new (ptr) ::lilsim::();
     ::PROTOBUF_NAMESPACE_ID::internal::OnShutdownDestroyMessage(ptr);
   }
-  ::lilsim::Scale2D::InitAsDefaultInstance();
+  ::lilsim::::InitAsDefaultInstance();
 }
 
-::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info_Scale2D_messages_2eproto =
-    {{ATOMIC_VAR_INIT(::PROTOBUF_NAMESPACE_ID::internal::SCCInfoBase::kUninitialized), 0, 0, InitDefaultsscc_info_Scale2D_messages_2eproto}, {}};
+::PROTOBUF_NAMESPACE_ID::internal::SCCInfo<0> scc_info__messages_2eproto =
+    {{ATOMIC_VAR_INIT(::PROTOBUF_NAMESPACE_ID::internal::SCCInfoBase::kUninitialized), 0, 0, InitDefaultsscc_info__messages_2eproto}, {}};
 
 static void InitDefaultsscc_info_SceneState_messages_2eproto() {
   GOOGLE_PROTOBUF_VERIFY_VERSION;
@@ -475,12 +475,12 @@ const ::PROTOBUF_NAMESPACE_ID::uint32 TableStruct_messages_2eproto::offsets[] PR
   PROTOBUF_FIELD_OFFSET(::lilsim::Color, b_),
   PROTOBUF_FIELD_OFFSET(::lilsim::Color, a_),
   ~0u,  // no _has_bits_
-  PROTOBUF_FIELD_OFFSET(::lilsim::Scale2D, _internal_metadata_),
+  PROTOBUF_FIELD_OFFSET(::lilsim::, _internal_metadata_),
   ~0u,  // no _extensions_
   ~0u,  // no _oneof_case_
   ~0u,  // no _weak_field_map_
-  PROTOBUF_FIELD_OFFSET(::lilsim::Scale2D, x_),
-  PROTOBUF_FIELD_OFFSET(::lilsim::Scale2D, y_),
+  PROTOBUF_FIELD_OFFSET(::lilsim::, x_),
+  PROTOBUF_FIELD_OFFSET(::lilsim::, y_),
   ~0u,  // no _has_bits_
   PROTOBUF_FIELD_OFFSET(::lilsim::SE2, _internal_metadata_),
   ~0u,  // no _extensions_
@@ -542,7 +542,7 @@ static const ::PROTOBUF_NAMESPACE_ID::internal::MigrationSchema schemas[] PROTOB
   { 75, -1, sizeof(::lilsim::AdminCommand)},
   { 86, -1, sizeof(::lilsim::AdminReply)},
   { 94, -1, sizeof(::lilsim::Color)},
-  { 103, -1, sizeof(::lilsim::Scale2D)},
+  { 103, -1, sizeof(::lilsim::)},
   { 110, -1, sizeof(::lilsim::SE2)},
   { 118, -1, sizeof(::lilsim::Pose)},
   { 126, -1, sizeof(::lilsim::Marker)},
@@ -563,7 +563,7 @@ static ::PROTOBUF_NAMESPACE_ID::Message const * const file_default_instances[] =
   reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_AdminCommand_default_instance_),
   reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_AdminReply_default_instance_),
   reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_Color_default_instance_),
-  reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_Scale2D_default_instance_),
+  reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::__default_instance_),
   reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_SE2_default_instance_),
   reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_Pose_default_instance_),
   reinterpret_cast<const ::PROTOBUF_NAMESPACE_ID::Message*>(&::lilsim::_Marker_default_instance_),
@@ -606,7 +606,7 @@ const char descriptor_table_protodef_messages_2eproto[] PROTOBUF_SECTION_VARIABL
   "r\022\n\n\002ns\030\001 \001(\t\022\n\n\002id\030\002 \001(\005\022 \n\004type\030\003 \001(\0162"
   "\022.lilsim.MarkerType\022\032\n\004pose\030\004 \001(\0132\014.lils"
   "im.Pose\022\034\n\005color\030\005 \001(\0132\r.lilsim.Color\022\036\n"
-  "\005scale\030\006 \001(\0132\017.lilsim.Scale2D\022\014\n\004text\030\007 "
+  "\005scale\030\006 \001(\0132\017.lilsim.\022\014\n\004text\030\007 "
   "\001(\t\022\034\n\006points\030\010 \003(\0132\014.lilsim.Pose\022\017\n\007ttl"
   "_sec\030\t \001(\001\022\017\n\007visible\030\n \001(\010\"N\n\013MarkerArr"
   "ay\022\036\n\006header\030\001 \001(\0132\016.lilsim.Header\022\037\n\007ma"
@@ -641,7 +641,7 @@ static ::PROTOBUF_NAMESPACE_ID::internal::SCCInfoBase*const descriptor_table_mes
   &scc_info_MarkerCommand_messages_2eproto.base,
   &scc_info_Pose_messages_2eproto.base,
   &scc_info_SE2_messages_2eproto.base,
-  &scc_info_Scale2D_messages_2eproto.base,
+  &scc_info__messages_2eproto.base,
   &scc_info_SceneState_messages_2eproto.base,
   &scc_info_SimParams_messages_2eproto.base,
   &scc_info_StateUpdate_messages_2eproto.base,
@@ -4104,60 +4104,60 @@ void Color::InternalSwap(Color* other) {
 
 // ===================================================================
 
-void Scale2D::InitAsDefaultInstance() {
+void ::InitAsDefaultInstance() {
 }
-class Scale2D::_Internal {
+class ::_Internal {
  public:
 };
 
-Scale2D::Scale2D(::PROTOBUF_NAMESPACE_ID::Arena* arena)
+::(::PROTOBUF_NAMESPACE_ID::Arena* arena)
   : ::PROTOBUF_NAMESPACE_ID::Message(arena) {
   SharedCtor();
   RegisterArenaDtor(arena);
-  // @@protoc_insertion_point(arena_constructor:lilsim.Scale2D)
+  // @@protoc_insertion_point(arena_constructor:lilsim.)
 }
-Scale2D::Scale2D(const Scale2D& from)
+::(const & from)
   : ::PROTOBUF_NAMESPACE_ID::Message() {
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
   ::memcpy(&x_, &from.x_,
     static_cast<size_t>(reinterpret_cast<char*>(&y_) -
     reinterpret_cast<char*>(&x_)) + sizeof(y_));
-  // @@protoc_insertion_point(copy_constructor:lilsim.Scale2D)
+  // @@protoc_insertion_point(copy_constructor:lilsim.)
 }
 
-void Scale2D::SharedCtor() {
+void ::SharedCtor() {
   ::memset(&x_, 0, static_cast<size_t>(
       reinterpret_cast<char*>(&y_) -
       reinterpret_cast<char*>(&x_)) + sizeof(y_));
 }
 
-Scale2D::~Scale2D() {
-  // @@protoc_insertion_point(destructor:lilsim.Scale2D)
+::~() {
+  // @@protoc_insertion_point(destructor:lilsim.)
   SharedDtor();
   _internal_metadata_.Delete<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
-void Scale2D::SharedDtor() {
+void ::SharedDtor() {
   GOOGLE_DCHECK(GetArena() == nullptr);
 }
 
-void Scale2D::ArenaDtor(void* object) {
-  Scale2D* _this = reinterpret_cast< Scale2D* >(object);
+void ::ArenaDtor(void* object) {
+  * _this = reinterpret_cast< * >(object);
   (void)_this;
 }
-void Scale2D::RegisterArenaDtor(::PROTOBUF_NAMESPACE_ID::Arena*) {
+void ::RegisterArenaDtor(::PROTOBUF_NAMESPACE_ID::Arena*) {
 }
-void Scale2D::SetCachedSize(int size) const {
+void ::SetCachedSize(int size) const {
   _cached_size_.Set(size);
 }
-const Scale2D& Scale2D::default_instance() {
-  ::PROTOBUF_NAMESPACE_ID::internal::InitSCC(&::scc_info_Scale2D_messages_2eproto.base);
+const & ::default_instance() {
+  ::PROTOBUF_NAMESPACE_ID::internal::InitSCC(&::scc_info__messages_2eproto.base);
   return *internal_default_instance();
 }
 
 
-void Scale2D::Clear() {
-// @@protoc_insertion_point(message_clear_start:lilsim.Scale2D)
+void ::Clear() {
+// @@protoc_insertion_point(message_clear_start:lilsim.)
   ::PROTOBUF_NAMESPACE_ID::uint32 cached_has_bits = 0;
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
@@ -4168,7 +4168,7 @@ void Scale2D::Clear() {
   _internal_metadata_.Clear<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>();
 }
 
-const char* Scale2D::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) {
+const char* ::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) {
 #define CHK_(x) if (PROTOBUF_PREDICT_FALSE(!(x))) goto failure
   ::PROTOBUF_NAMESPACE_ID::Arena* arena = GetArena(); (void)arena;
   while (!ctx->Done(&ptr)) {
@@ -4212,9 +4212,9 @@ failure:
 #undef CHK_
 }
 
-::PROTOBUF_NAMESPACE_ID::uint8* Scale2D::_InternalSerialize(
+::PROTOBUF_NAMESPACE_ID::uint8* ::_InternalSerialize(
     ::PROTOBUF_NAMESPACE_ID::uint8* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const {
-  // @@protoc_insertion_point(serialize_to_array_start:lilsim.Scale2D)
+  // @@protoc_insertion_point(serialize_to_array_start:lilsim.)
   ::PROTOBUF_NAMESPACE_ID::uint32 cached_has_bits = 0;
   (void) cached_has_bits;
 
@@ -4234,12 +4234,12 @@ failure:
     target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormat::InternalSerializeUnknownFieldsToArray(
         _internal_metadata_.unknown_fields<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(::PROTOBUF_NAMESPACE_ID::UnknownFieldSet::default_instance), target, stream);
   }
-  // @@protoc_insertion_point(serialize_to_array_end:lilsim.Scale2D)
+  // @@protoc_insertion_point(serialize_to_array_end:lilsim.)
   return target;
 }
 
-size_t Scale2D::ByteSizeLong() const {
-// @@protoc_insertion_point(message_byte_size_start:lilsim.Scale2D)
+size_t ::ByteSizeLong() const {
+// @@protoc_insertion_point(message_byte_size_start:lilsim.)
   size_t total_size = 0;
 
   ::PROTOBUF_NAMESPACE_ID::uint32 cached_has_bits = 0;
@@ -4265,23 +4265,23 @@ size_t Scale2D::ByteSizeLong() const {
   return total_size;
 }
 
-void Scale2D::MergeFrom(const ::PROTOBUF_NAMESPACE_ID::Message& from) {
-// @@protoc_insertion_point(generalized_merge_from_start:lilsim.Scale2D)
+void ::MergeFrom(const ::PROTOBUF_NAMESPACE_ID::Message& from) {
+// @@protoc_insertion_point(generalized_merge_from_start:lilsim.)
   GOOGLE_DCHECK_NE(&from, this);
-  const Scale2D* source =
-      ::PROTOBUF_NAMESPACE_ID::DynamicCastToGenerated<Scale2D>(
+  const * source =
+      ::PROTOBUF_NAMESPACE_ID::DynamicCastToGenerated<>(
           &from);
   if (source == nullptr) {
-  // @@protoc_insertion_point(generalized_merge_from_cast_fail:lilsim.Scale2D)
+  // @@protoc_insertion_point(generalized_merge_from_cast_fail:lilsim.)
     ::PROTOBUF_NAMESPACE_ID::internal::ReflectionOps::Merge(from, this);
   } else {
-  // @@protoc_insertion_point(generalized_merge_from_cast_success:lilsim.Scale2D)
+  // @@protoc_insertion_point(generalized_merge_from_cast_success:lilsim.)
     MergeFrom(*source);
   }
 }
 
-void Scale2D::MergeFrom(const Scale2D& from) {
-// @@protoc_insertion_point(class_specific_merge_from_start:lilsim.Scale2D)
+void ::MergeFrom(const & from) {
+// @@protoc_insertion_point(class_specific_merge_from_start:lilsim.)
   GOOGLE_DCHECK_NE(&from, this);
   _internal_metadata_.MergeFrom<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(from._internal_metadata_);
   ::PROTOBUF_NAMESPACE_ID::uint32 cached_has_bits = 0;
@@ -4295,36 +4295,36 @@ void Scale2D::MergeFrom(const Scale2D& from) {
   }
 }
 
-void Scale2D::CopyFrom(const ::PROTOBUF_NAMESPACE_ID::Message& from) {
-// @@protoc_insertion_point(generalized_copy_from_start:lilsim.Scale2D)
+void ::CopyFrom(const ::PROTOBUF_NAMESPACE_ID::Message& from) {
+// @@protoc_insertion_point(generalized_copy_from_start:lilsim.)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
 }
 
-void Scale2D::CopyFrom(const Scale2D& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:lilsim.Scale2D)
+void ::CopyFrom(const & from) {
+// @@protoc_insertion_point(class_specific_copy_from_start:lilsim.)
   if (&from == this) return;
   Clear();
   MergeFrom(from);
 }
 
-bool Scale2D::IsInitialized() const {
+bool ::IsInitialized() const {
   return true;
 }
 
-void Scale2D::InternalSwap(Scale2D* other) {
+void ::InternalSwap(* other) {
   using std::swap;
   _internal_metadata_.Swap<::PROTOBUF_NAMESPACE_ID::UnknownFieldSet>(&other->_internal_metadata_);
   ::PROTOBUF_NAMESPACE_ID::internal::memswap<
-      PROTOBUF_FIELD_OFFSET(Scale2D, y_)
-      + sizeof(Scale2D::y_)
-      - PROTOBUF_FIELD_OFFSET(Scale2D, x_)>(
+      PROTOBUF_FIELD_OFFSET(, y_)
+      + sizeof(::y_)
+      - PROTOBUF_FIELD_OFFSET(, x_)>(
           reinterpret_cast<char*>(&x_),
           reinterpret_cast<char*>(&other->x_));
 }
 
-::PROTOBUF_NAMESPACE_ID::Metadata Scale2D::GetMetadata() const {
+::PROTOBUF_NAMESPACE_ID::Metadata ::GetMetadata() const {
   return GetMetadataStatic();
 }
 
@@ -4832,14 +4832,14 @@ void Marker::InitAsDefaultInstance() {
       ::lilsim::Pose::internal_default_instance());
   ::lilsim::_Marker_default_instance_._instance.get_mutable()->color_ = const_cast< ::lilsim::Color*>(
       ::lilsim::Color::internal_default_instance());
-  ::lilsim::_Marker_default_instance_._instance.get_mutable()->scale_ = const_cast< ::lilsim::Scale2D*>(
-      ::lilsim::Scale2D::internal_default_instance());
+  ::lilsim::_Marker_default_instance_._instance.get_mutable()->scale_ = const_cast< ::lilsim::*>(
+      ::lilsim::::internal_default_instance());
 }
 class Marker::_Internal {
  public:
   static const ::lilsim::Pose& pose(const Marker* msg);
   static const ::lilsim::Color& color(const Marker* msg);
-  static const ::lilsim::Scale2D& scale(const Marker* msg);
+  static const ::lilsim::& scale(const Marker* msg);
 };
 
 const ::lilsim::Pose&
@@ -4850,7 +4850,7 @@ const ::lilsim::Color&
 Marker::_Internal::color(const Marker* msg) {
   return *msg->color_;
 }
-const ::lilsim::Scale2D&
+const ::lilsim::&
 Marker::_Internal::scale(const Marker* msg) {
   return *msg->scale_;
 }
@@ -4886,7 +4886,7 @@ Marker::Marker(const Marker& from)
     color_ = nullptr;
   }
   if (from._internal_has_scale()) {
-    scale_ = new ::lilsim::Scale2D(*from.scale_);
+    scale_ = new ::lilsim::(*from.scale_);
   } else {
     scale_ = nullptr;
   }
@@ -5008,7 +5008,7 @@ const char* Marker::_InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::int
           CHK_(ptr);
         } else goto handle_unusual;
         continue;
-      // .lilsim.Scale2D scale = 6;
+      // .lilsim. scale = 6;
       case 6:
         if (PROTOBUF_PREDICT_TRUE(static_cast<::PROTOBUF_NAMESPACE_ID::uint8>(tag) == 50)) {
           ptr = ctx->ParseMessage(_internal_mutable_scale(), ptr);
@@ -5117,7 +5117,7 @@ failure:
         5, _Internal::color(this), target, stream);
   }
 
-  // .lilsim.Scale2D scale = 6;
+  // .lilsim. scale = 6;
   if (this->has_scale()) {
     target = stream->EnsureSpace(target);
     target = ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::
@@ -5206,7 +5206,7 @@ size_t Marker::ByteSizeLong() const {
         *color_);
   }
 
-  // .lilsim.Scale2D scale = 6;
+  // .lilsim. scale = 6;
   if (this->has_scale()) {
     total_size += 1 +
       ::PROTOBUF_NAMESPACE_ID::internal::WireFormatLite::MessageSize(
@@ -5281,7 +5281,7 @@ void Marker::MergeFrom(const Marker& from) {
     _internal_mutable_color()->::lilsim::Color::MergeFrom(from._internal_color());
   }
   if (from.has_scale()) {
-    _internal_mutable_scale()->::lilsim::Scale2D::MergeFrom(from._internal_scale());
+    _internal_mutable_scale()->::lilsim::::MergeFrom(from._internal_scale());
   }
   if (from.id() != 0) {
     _internal_set_id(from._internal_id());
@@ -5933,8 +5933,8 @@ template<> PROTOBUF_NOINLINE ::lilsim::AdminReply* Arena::CreateMaybeMessage< ::
 template<> PROTOBUF_NOINLINE ::lilsim::Color* Arena::CreateMaybeMessage< ::lilsim::Color >(Arena* arena) {
   return Arena::CreateMessageInternal< ::lilsim::Color >(arena);
 }
-template<> PROTOBUF_NOINLINE ::lilsim::Scale2D* Arena::CreateMaybeMessage< ::lilsim::Scale2D >(Arena* arena) {
-  return Arena::CreateMessageInternal< ::lilsim::Scale2D >(arena);
+template<> PROTOBUF_NOINLINE ::lilsim::* Arena::CreateMaybeMessage< ::lilsim:: >(Arena* arena) {
+  return Arena::CreateMessageInternal< ::lilsim:: >(arena);
 }
 template<> PROTOBUF_NOINLINE ::lilsim::SE2* Arena::CreateMaybeMessage< ::lilsim::SE2 >(Arena* arena) {
   return Arena::CreateMessageInternal< ::lilsim::SE2 >(arena);

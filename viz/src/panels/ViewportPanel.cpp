@@ -285,7 +285,7 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
   
   // ===== HUD Overlay (bottom-right corner) =====
   // Fixed in screen space, not affected by camera zoom/pan
-  
+
   const float hud_margin_right = 10.0f;
   const float hud_margin_bottom = 15.0f;
   const float gap_between_elements = 10.0f;
@@ -318,8 +318,6 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
     const float delta = static_cast<float>(scene.car_input.delta);  // radians
     
     // Calculate rotated corners of steering wheel sprite
-    // Rotation matrix: [cos -sin]
-    //                  [sin  cos]
     float cos_delta = std::cos(delta);
     float sin_delta = std::sin(delta);
     float half_width = wheel_width * 0.5f;

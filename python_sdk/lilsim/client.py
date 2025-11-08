@@ -5,6 +5,7 @@ import time
 import threading
 from typing import Optional, Callable, Dict, Any
 import logging
+import numpy as np
 
 from . import messages_pb2
 
@@ -460,7 +461,7 @@ class LilsimClient:
                       x: float = 0, y: float = 0, yaw: float = 0,
                       r: int = 255, g: int = 255, b: int = 255, a: int = 255,
                       scale_x: float = 1.0, scale_y: float = 1.0,
-                      text: str = "", points: list = None,
+                      text: str = "", points: list | np.ndarray = None,
                       ttl_sec: float = 0.0, visible: bool = True):
         """Publish a single marker.
         
@@ -493,7 +494,7 @@ class LilsimClient:
         marker.ttl_sec = ttl_sec
         marker.visible = visible
         
-        if points:
+        if points is not None:
             for px, py, pyaw in points:
                 pt = marker.points.add()
                 pt.x = px
@@ -518,7 +519,196 @@ class LilsimClient:
         array.markers.extend(markers)
         
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
-    
+
+    def publish_line_strip(self, ns: str, id: int, points: list | np.ndarray,
+                          color: tuple = (255, 0, 0, 255),
+                          scale: float = 0.05,
+                          ttl_sec: float = 0.0):
+        """Publish a line strip marker.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            points: List of (x, y, yaw) tuples
+            color: RGBA tuple (0-255)
+            scale: Line width
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.LINE_STRIP
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.scale.x = scale
+        marker.scale.y = scale
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+
+        for point in points:
+            pt = marker.points.add()
+            pt.x = point[0]
+            pt.y = point[1]
+            pt.yaw = point[2] if len(point) > 2 else 0.0
+            
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+        
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_circle(self, ns: str, id: int, pos: tuple[float, float],
+                      radius: float = 0.5,
+                      color: tuple = (255, 0, 0, 255),
+                      ttl_sec: float = 0.0):
+        """Publish a circle marker.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            pos: Tuple of (x, y) position
+            radius: Circle radius
+            color: RGBA tuple (0-255)
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.CIRCLE
+        marker.pose.x = pos[0]
+        marker.pose.y = pos[1]
+        marker.pose.yaw = 0.0
+        marker.scale.x = radius * 2
+        marker.scale.y = radius * 2
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+        
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_text(self, ns: str, id: int, x: float, y: float, text: str,
+                     color: tuple = (255, 255, 255, 255),
+                     scale: float = 1.0,
+                     ttl_sec: float = 0.0):
+        """Publish a text marker.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            x, y: Position
+            text: Text content
+            color: RGBA tuple (0-255)
+            scale: Text scale
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.TEXT
+        marker.pose.x = x
+        marker.pose.y = y
+        marker.text = text
+        marker.scale.x = scale
+        marker.scale.y = scale
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_arrow(self, ns: str, id: int, 
+                      from_pos: tuple[float, float], 
+                      to_pos: tuple[float, float],
+                      thickness: float = 0.1,
+                      color: tuple = (255, 255, 255, 255),
+                      ttl_sec: float = 0.0):
+        """Publish an arrow marker.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            from_pos: Tuple of (x, y) from position
+            to_pos: Tuple of (x, y) to position
+            color: RGBA tuple (0-255)
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+
+        marker.id = id
+        marker.type = messages_pb2.ARROW
+        marker.pose.x = from_pos[0]
+        marker.pose.y = from_pos[1]
+        marker.pose.yaw = np.arctan2(to_pos[1] - from_pos[1], to_pos[0] - from_pos[0])
+        marker.scale.x = np.linalg.norm(to_pos - from_pos)
+        marker.scale.y = thickness
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_line(self, ns: str, id: int, 
+                      from_pos: tuple[float, float], 
+                      to_pos: tuple(float, float),
+                      thickness: float = 0.1,
+                      color: tuple = (255, 255, 255, 255),
+                      ttl_sec: float = 0.0):
+        """Publish an arrow marker.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            from_pos: Tuple of (x, y) from position
+            to_pos: Tuple of (x, y) to position
+            color: RGBA tuple (0-255)
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+
+        marker.id = id
+        marker.type = messages_pb2.LINE_STRIP
+        marker.points.append(from_pos)
+        marker.points.append(to_pos)
+        marker.scale.x = thickness
+        marker.scale.y = thickness
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
     def delete_marker(self, ns: str, marker_id: int):
         """Delete a specific marker.
         

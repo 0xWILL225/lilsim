@@ -133,6 +133,7 @@ enum MarkerType {
   MESH_2D       = 10;
 }
 
+// ADD reference frame id
 message Marker {
   string     ns         = 1;  // namespace
   int32      id         = 2;  // unique within namespace
