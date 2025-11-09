@@ -4,6 +4,7 @@ from .client import LilsimClient
 from .messages_pb2 import (
     AdminCommandType,
     MarkerType,
+    FrameId,
     StateUpdate,
     ControlRequest,
     ControlReply,
@@ -18,6 +19,7 @@ __all__ = [
     "LilsimClient",
     "AdminCommandType",
     "MarkerType",
+    "FrameId",
     "StateUpdate",
     "ControlRequest",
     "ControlReply",

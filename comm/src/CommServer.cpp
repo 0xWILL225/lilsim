@@ -104,12 +104,14 @@ bool CommServer::requestControl(const lilsim::ControlRequest& request,
                                 lilsim::ControlReply& reply,
                                 int timeout_ms) {
   if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
+    m_syncClientConnected.store(false, std::memory_order_relaxed);
     return false;
   }
 
   try {
     // Send control request (DEALER doesn't enforce strict ordering)
     if (!sendProto(*m_controlDealer, request, zmq::send_flags::dontwait)) {
+      m_syncClientConnected.store(false, std::memory_order_relaxed);
       return false;
     }
 

@@ -9,7 +9,8 @@ set(PROTO_HDRS "${CMAKE_CURRENT_BINARY_DIR}/messages.pb.h")
 add_custom_command(
   OUTPUT ${PROTO_SRCS} ${PROTO_HDRS}
   COMMAND ${Protobuf_PROTOC_EXECUTABLE}
-  ARGS --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
+  ARGS --experimental_allow_proto3_optional
+       --cpp_out=${CMAKE_CURRENT_BINARY_DIR}
        --proto_path=${CMAKE_CURRENT_SOURCE_DIR}
        ${CMAKE_CURRENT_SOURCE_DIR}/messages.proto
   DEPENDS messages.proto

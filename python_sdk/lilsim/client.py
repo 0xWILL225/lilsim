@@ -339,6 +339,8 @@ class LilsimClient:
             cmd.control_period_ms = kwargs['control_period_ms']
         if 'params' in kwargs:
             cmd.params.CopyFrom(kwargs['params'])
+        if 'track_path' in kwargs:
+            cmd.track_path = kwargs['track_path']
             
         # Send and wait for reply
         self.admin_req.send(cmd.SerializeToString())
@@ -454,26 +456,44 @@ class LilsimClient:
             
         reply = self._send_admin_command(messages_pb2.SET_PARAMS, params=params)
         return reply.success
+    
+    def set_track(self, track_path: str) -> bool:
+        """Load a track from a CSV file.
+        
+        Args:
+            track_path: Full or relative path to the track CSV file
+            
+        Returns:
+            True if successful
+        """
+        reply = self._send_admin_command(messages_pb2.SET_TRACK, track_path=track_path)
+        return reply.success
         
     # ========== Marker Publishing ==========
     
-    def publish_marker(self, ns: str, id: int, marker_type: messages_pb2.MarkerType,
+    def publish_marker(self, ns: str, id: int, 
+                      frame_id: messages_pb2.FrameId = None,
+                      marker_type: messages_pb2.MarkerType = None,
                       x: float = 0, y: float = 0, yaw: float = 0,
                       r: int = 255, g: int = 255, b: int = 255, a: int = 255,
                       scale_x: float = 1.0, scale_y: float = 1.0,
-                      text: str = "", points: list | np.ndarray = None,
+                      text: str = "", 
+                      points: list | np.ndarray = None,
+                      colors: list | np.ndarray = None,
                       ttl_sec: float = 0.0, visible: bool = True):
         """Publish a single marker.
         
         Args:
             ns: Namespace for the marker
             id: Unique ID within namespace
+            frame_id: Reference frame (WORLD or CAR)
             marker_type: Type of marker (from MarkerType enum)
             x, y, yaw: Pose of the marker
             r, g, b, a: Color (0-255)
             scale_x, scale_y: Scale factors
             text: Text content (for TEXT markers)
-            points: List of (x, y, yaw) tuples (for LINE_STRIP, etc.)
+            points: List of (x, y) tuples (for LINE_STRIP, etc.)
+            colors: List of (r, g, b, a) tuples for per-vertex colors
             ttl_sec: Time-to-live in seconds (0 = infinite)
             visible: Visibility flag
         """
@@ -493,13 +513,25 @@ class LilsimClient:
         marker.text = text
         marker.ttl_sec = ttl_sec
         marker.visible = visible
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
         
         if points is not None:
-            for px, py, pyaw in points:
+            for point in points:
                 pt = marker.points.add()
-                pt.x = px
-                pt.y = py
-                pt.yaw = pyaw
+                if len(point) >= 2:
+                    pt.x = point[0]
+                    pt.y = point[1]
+                else:
+                    pt.x = point[0] if len(point) > 0 else 0
+                    pt.y = 0
+        
+        if colors is not None:
+            for color in colors:
+                c = marker.colors.add()
+                c.r = color[0] if len(color) > 0 else 255
+                c.g = color[1] if len(color) > 1 else 255
+                c.b = color[2] if len(color) > 2 else 255
+                c.a = color[3] if len(color) > 3 else 255
                 
         # Wrap in MarkerArray
         array = messages_pb2.MarkerArray()
@@ -520,18 +552,23 @@ class LilsimClient:
         
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
-    def publish_line_strip(self, ns: str, id: int, points: list | np.ndarray,
+    def publish_line_strip(self, ns: str, id: int, 
+                          frame_id: messages_pb2.FrameId = None,
+                          points: list | np.ndarray = None,
+                          colors: list = None,
                           color: tuple = (255, 0, 0, 255),
-                          scale: float = 0.05,
+                          line_width: float = 0.05,
                           ttl_sec: float = 0.0):
         """Publish a line strip marker.
         
         Args:
             ns: Namespace
             id: Marker ID
-            points: List of (x, y, yaw) tuples
-            color: RGBA tuple (0-255)
-            scale: Line width
+            frame_id: Reference frame (WORLD or CAR)
+            points: List of (x, y) tuples
+            colors: Optional list of RGBA tuples for per-vertex colors
+            color: RGBA tuple (0-255) - used if colors not provided
+            line_width: Line width in meters
             ttl_sec: Time-to-live in seconds (0 = infinite)
         """
         marker = messages_pb2.Marker()
@@ -542,16 +579,24 @@ class LilsimClient:
         marker.color.g = color[1]
         marker.color.b = color[2]
         marker.color.a = color[3]
-        marker.scale.x = scale
-        marker.scale.y = scale
+        marker.scale.x = line_width
+        marker.scale.y = line_width
         marker.ttl_sec = ttl_sec
         marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
 
         for point in points:
             pt = marker.points.add()
             pt.x = point[0]
             pt.y = point[1]
-            pt.yaw = point[2] if len(point) > 2 else 0.0
+        
+        if colors is not None:
+            for c in colors:
+                col = marker.colors.add()
+                col.r = c[0]
+                col.g = c[1]
+                col.b = c[2]
+                col.a = c[3] if len(c) > 3 else 255
             
         array = messages_pb2.MarkerArray()
         array.header.version = 1
@@ -559,7 +604,9 @@ class LilsimClient:
         
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
-    def publish_circle(self, ns: str, id: int, pos: tuple[float, float],
+    def publish_circle(self, ns: str, id: int, 
+                      frame_id: messages_pb2.FrameId = None,
+                      pos: tuple[float, float] = (0, 0),
                       radius: float = 0.5,
                       color: tuple = (255, 0, 0, 255),
                       ttl_sec: float = 0.0):
@@ -568,8 +615,9 @@ class LilsimClient:
         Args:
             ns: Namespace
             id: Marker ID
+            frame_id: Reference frame (WORLD or CAR)
             pos: Tuple of (x, y) position
-            radius: Circle radius
+            radius: Circle radius in meters
             color: RGBA tuple (0-255)
             ttl_sec: Time-to-live in seconds (0 = infinite)
         """
@@ -588,6 +636,7 @@ class LilsimClient:
         marker.color.a = color[3]
         marker.ttl_sec = ttl_sec
         marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
 
         array = messages_pb2.MarkerArray()
         array.header.version = 1
@@ -595,7 +644,10 @@ class LilsimClient:
         
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
-    def publish_text(self, ns: str, id: int, x: float, y: float, text: str,
+    def publish_text(self, ns: str, id: int, 
+                     frame_id: messages_pb2.FrameId = None,
+                     pos: tuple[float, float] = (0, 0), 
+                     text: str = "",
                      color: tuple = (255, 255, 255, 255),
                      scale: float = 1.0,
                      ttl_sec: float = 0.0):
@@ -604,7 +656,8 @@ class LilsimClient:
         Args:
             ns: Namespace
             id: Marker ID
-            x, y: Position
+            frame_id: Reference frame (WORLD or CAR)
+            pos: Tuple of (x, y) position
             text: Text content
             color: RGBA tuple (0-255)
             scale: Text scale
@@ -614,8 +667,8 @@ class LilsimClient:
         marker.ns = ns
         marker.id = id
         marker.type = messages_pb2.TEXT
-        marker.pose.x = x
-        marker.pose.y = y
+        marker.pose.x = pos[0]
+        marker.pose.y = pos[1]
         marker.text = text
         marker.scale.x = scale
         marker.scale.y = scale
@@ -625,6 +678,7 @@ class LilsimClient:
         marker.color.a = color[3]
         marker.ttl_sec = ttl_sec
         marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
 
         array = messages_pb2.MarkerArray()
         array.header.version = 1
@@ -633,8 +687,9 @@ class LilsimClient:
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
     def publish_arrow(self, ns: str, id: int, 
-                      from_pos: tuple[float, float], 
-                      to_pos: tuple[float, float],
+                      frame_id: messages_pb2.FrameId = None,
+                      from_pos: tuple[float, float] = (0, 0), 
+                      to_pos: tuple[float, float] = (1, 0),
                       thickness: float = 0.1,
                       color: tuple = (255, 255, 255, 255),
                       ttl_sec: float = 0.0):
@@ -643,20 +698,27 @@ class LilsimClient:
         Args:
             ns: Namespace
             id: Marker ID
+            frame_id: Reference frame (WORLD or CAR)
             from_pos: Tuple of (x, y) from position
             to_pos: Tuple of (x, y) to position
+            thickness: Arrow shaft/head thickness in meters
             color: RGBA tuple (0-255)
             ttl_sec: Time-to-live in seconds (0 = infinite)
         """
         marker = messages_pb2.Marker()
         marker.ns = ns
-
         marker.id = id
         marker.type = messages_pb2.ARROW
         marker.pose.x = from_pos[0]
         marker.pose.y = from_pos[1]
-        marker.pose.yaw = np.arctan2(to_pos[1] - from_pos[1], to_pos[0] - from_pos[0])
-        marker.scale.x = np.linalg.norm(to_pos - from_pos)
+        
+        # Calculate direction and length
+        dx = to_pos[0] - from_pos[0]
+        dy = to_pos[1] - from_pos[1]
+        length = np.sqrt(dx * dx + dy * dy)
+        marker.pose.yaw = np.arctan2(dy, dx)
+        
+        marker.scale.x = length
         marker.scale.y = thickness
         marker.color.r = color[0]
         marker.color.g = color[1]
@@ -664,6 +726,7 @@ class LilsimClient:
         marker.color.a = color[3]
         marker.ttl_sec = ttl_sec
         marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
 
         array = messages_pb2.MarkerArray()
         array.header.version = 1
@@ -671,42 +734,202 @@ class LilsimClient:
 
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
-    def publish_line(self, ns: str, id: int, 
-                      from_pos: tuple[float, float], 
-                      to_pos: tuple(float, float),
-                      thickness: float = 0.1,
-                      color: tuple = (255, 255, 255, 255),
-                      ttl_sec: float = 0.0):
-        """Publish an arrow marker.
+    def publish_ring(self, ns: str, id: int, 
+                     frame_id: messages_pb2.FrameId = None,
+                     pos: tuple[float, float] = (0, 0),
+                     radius: float = 0.5,
+                     line_width: float = 0.05,
+                     color: tuple = (255, 255, 255, 255),
+                     num_segments: int = 32,
+                     ttl_sec: float = 0.0):
+        """Publish a ring marker (circle outline using LINE_STRIP).
         
         Args:
             ns: Namespace
             id: Marker ID
-            from_pos: Tuple of (x, y) from position
-            to_pos: Tuple of (x, y) to position
+            frame_id: Reference frame (WORLD or CAR)
+            pos: Tuple of (x, y) position
+            radius: Ring radius in meters
+            line_width: Line width in meters
             color: RGBA tuple (0-255)
+            num_segments: Number of line segments to approximate circle
             ttl_sec: Time-to-live in seconds (0 = infinite)
         """
+        # Generate circle points
+        points = []
+        for i in range(num_segments + 1):  # +1 to close the circle
+            angle = 2 * np.pi * i / num_segments
+            x = pos[0] + radius * np.cos(angle)
+            y = pos[1] + radius * np.sin(angle)
+            points.append((x, y))
+        
         marker = messages_pb2.Marker()
         marker.ns = ns
-
         marker.id = id
         marker.type = messages_pb2.LINE_STRIP
-        marker.points.append(from_pos)
-        marker.points.append(to_pos)
-        marker.scale.x = thickness
-        marker.scale.y = thickness
+        marker.scale.x = line_width
+        marker.scale.y = line_width
         marker.color.r = color[0]
         marker.color.g = color[1]
         marker.color.b = color[2]
         marker.color.a = color[3]
         marker.ttl_sec = ttl_sec
         marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
+
+        for point in points:
+            pt = marker.points.add()
+            pt.x = point[0]
+            pt.y = point[1]
 
         array = messages_pb2.MarkerArray()
         array.header.version = 1
         array.markers.append(marker)
 
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_rectangle(self, ns: str, id: int, 
+                         frame_id: messages_pb2.FrameId = None,
+                         pos: tuple[float, float] = (0, 0),
+                         width: float = 1.0, 
+                         height: float = 1.0,
+                         yaw: float = 0.0,
+                         color: tuple = (255, 255, 255, 255),
+                         ttl_sec: float = 0.0):
+        """Publish a rectangle marker.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            frame_id: Reference frame (WORLD or CAR)
+            pos: Tuple of (x, y) position (center)
+            width: Rectangle width in meters
+            height: Rectangle height in meters
+            yaw: Rotation angle in radians
+            color: RGBA tuple (0-255)
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.RECTANGLE
+        marker.pose.x = pos[0]
+        marker.pose.y = pos[1]
+        marker.pose.yaw = yaw
+        marker.scale.x = width
+        marker.scale.y = height
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+        
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_circle_list(self, ns: str, id: int, 
+                           frame_id: messages_pb2.FrameId = None,
+                           positions: list | np.ndarray = None,
+                           colors: list = None,
+                           radius: float = 0.5,
+                           color: tuple = (255, 255, 255, 255),
+                           ttl_sec: float = 0.0):
+        """Publish a list of circles.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            frame_id: Reference frame (WORLD or CAR)
+            positions: List of (x, y) tuples
+            colors: Optional list of RGBA tuples for per-circle colors
+            radius: Radius for all circles in meters
+            color: RGBA tuple (0-255) - used if colors not provided
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.CIRCLE_LIST
+        marker.scale.x = radius * 2  # diameter
+        marker.scale.y = radius * 2
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
+
+        for pos in positions:
+            pt = marker.points.add()
+            pt.x = pos[0]
+            pt.y = pos[1]
+        
+        if colors is not None:
+            for c in colors:
+                col = marker.colors.add()
+                col.r = c[0]
+                col.g = c[1]
+                col.b = c[2]
+                col.a = c[3] if len(c) > 3 else 255
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+        
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
+    def publish_triangle_list(self, ns: str, id: int, 
+                             frame_id: messages_pb2.FrameId = None,
+                             triangles: list | np.ndarray = None,
+                             colors: list = None,
+                             color: tuple = (255, 255, 255, 255),
+                             ttl_sec: float = 0.0):
+        """Publish a list of triangles.
+        
+        Args:
+            ns: Namespace
+            id: Marker ID
+            frame_id: Reference frame (WORLD or CAR)
+            triangles: List of (x, y) tuples (every 3 points forms a triangle)
+            colors: Optional list of RGBA tuples for per-vertex colors
+            color: RGBA tuple (0-255) - used if colors not provided
+            ttl_sec: Time-to-live in seconds (0 = infinite)
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.TRIANGLE_LIST
+        marker.color.r = color[0]
+        marker.color.g = color[1]
+        marker.color.b = color[2]
+        marker.color.a = color[3]
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
+
+        for vertex in triangles:
+            pt = marker.points.add()
+            pt.x = vertex[0]
+            pt.y = vertex[1]
+        
+        if colors is not None:
+            for c in colors:
+                col = marker.colors.add()
+                col.r = c[0]
+                col.g = c[1]
+                col.b = c[2]
+                col.a = c[3] if len(c) > 3 else 255
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+        
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
     def delete_marker(self, ns: str, marker_id: int):

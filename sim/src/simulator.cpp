@@ -3,6 +3,7 @@
 
 #include "simulator.hpp"
 #include "comm/CommServer.hpp"
+#include "TrackLoader.hpp"
 #include <spdlog/spdlog.h>
 
 namespace sim {
@@ -178,17 +179,32 @@ void Simulator::loop() {
 
           case lilsim::AdminCommandType::SET_PARAMS:
             if (cmd.has_params()) {
-              m_params.dt = cmd.params().dt();
-              m_params.wheelbase = cmd.params().wheelbase();
-              m_params.v_max = cmd.params().v_max();
-              m_params.delta_max = cmd.params().delta_max();
-              m_params.ax_max = cmd.params().ax_max();
-              m_params.steer_rate_max = cmd.params().steer_rate_max();
-              // Convert protobuf steering mode enum to scene::SteeringMode
-              if (cmd.params().steering_mode() == lilsim::SteeringInputMode::ANGLE) {
-                m_params.steering_mode = scene::SteeringMode::Angle;
-              } else {
-                m_params.steering_mode = scene::SteeringMode::Rate;
+              // Only update parameters that were explicitly set
+              if (cmd.params().has_dt()) {
+                m_params.dt = cmd.params().dt();
+              }
+              if (cmd.params().has_wheelbase()) {
+                m_params.wheelbase = cmd.params().wheelbase();
+              }
+              if (cmd.params().has_v_max()) {
+                m_params.v_max = cmd.params().v_max();
+              }
+              if (cmd.params().has_delta_max()) {
+                m_params.delta_max = cmd.params().delta_max();
+              }
+              if (cmd.params().has_ax_max()) {
+                m_params.ax_max = cmd.params().ax_max();
+              }
+              if (cmd.params().has_steer_rate_max()) {
+                m_params.steer_rate_max = cmd.params().steer_rate_max();
+              }
+              if (cmd.params().has_steering_mode()) {
+                // Convert protobuf steering mode enum to scene::SteeringMode
+                if (cmd.params().steering_mode() == lilsim::SteeringInputMode::ANGLE) {
+                  m_params.steering_mode = scene::SteeringMode::Angle;
+                } else {
+                  m_params.steering_mode = scene::SteeringMode::Rate;
+                }
               }
               m_resetRequested.store(true, std::memory_order_relaxed);
               msg = "Parameters set, reset requested";
@@ -208,6 +224,28 @@ void Simulator::loop() {
             }
             msg = cmd.sync_mode() ? "Synchronous mode enabled" : "Asynchronous mode enabled";
             break;
+
+          case lilsim::AdminCommandType::SET_TRACK: {
+            if (!cmd.track_path().empty()) {
+              scene::TrackData trackData;
+              if (scene::TrackLoader::loadFromCSV(cmd.track_path(), trackData)) {
+                setCones(trackData.cones);
+                if (trackData.startPose.has_value()) {
+                  setStartPose(trackData.startPose.value());
+                }
+                msg = "Track loaded: " + cmd.track_path();
+                spdlog::info("[sim] Loaded track from {}", cmd.track_path());
+              } else {
+                success = false;
+                msg = "Failed to load track: " + cmd.track_path();
+                spdlog::error("[sim] Failed to load track from {}", cmd.track_path());
+              }
+            } else {
+              success = false;
+              msg = "No track path provided";
+            }
+            break;
+          }
 
           case lilsim::AdminCommandType::INIT:
             if (cmd.has_params()) {
@@ -333,6 +371,8 @@ void Simulator::loop() {
             
             // Try to get response (connection state updated automatically)
             if (m_commServer->requestControl(request, reply, pollInterval)) {
+              // spdlog::info("[sim] Control request successful (tick={}, steer_angle={:.2f}, steer_rate={:.2f}, ax={:.2f})",
+              //              tick, reply.steer_angle(), reply.steer_rate(), reply.ax()); 
               gotReply = true;
               u.delta = reply.steer_angle();
               u.delta_dot = reply.steer_rate();

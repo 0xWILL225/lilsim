@@ -85,14 +85,22 @@ public:
   }
   bool isSyncClientConnected() const;
   
+  // Parameter getters for UI
+  double getWheelbase() const { return m_params.wheelbase; }
+  double getVMax() const { return m_params.v_max; }
+  double getAxMax() const { return m_params.ax_max; }
+  double getSteerRateMax() const { return m_params.steer_rate_max; }
+  double getDeltaMax() const { return m_params.delta_max; }
+  scene::SteeringMode getSteeringMode() const { return m_params.steering_mode; }
+  
+private:
+  void loop();
+
   /**
-   * @brief Probe sync client connection (for UI heartbeat checking)
+   * @brief Probe sync client connection
    * Only meaningful when in sync mode with comm enabled
    */
   void probeConnection();
-
-private:
-  void loop();
 
   struct Params { // Settable parameters
     double wheelbase{common::CarDefaults::wheelbase};

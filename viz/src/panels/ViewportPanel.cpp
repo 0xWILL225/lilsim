@@ -2,7 +2,9 @@
 #include "KeyBindings.hpp"
 #include "MarkerSystem.hpp"
 #include "TextureManager.hpp"
+#include "scene.hpp"
 #include <imgui.h>
+#include <spdlog/spdlog.h>
 #include <cmath>
 
 #ifndef M_PI
@@ -148,40 +150,281 @@ void ViewportPanel::draw(float x, float y, float width, float height) {
   // Draw markers
   if (m_markerSystem) {
     const auto& markers = m_markerSystem->getMarkers();
+    
+    // Helper to transform a position based on frame_id
+    auto transformPosition = [&](const common::Position& pos, FrameId frame) -> common::Position {
+      if (frame == lilsim::CAR) {
+        // Transform from car frame to world frame
+        Eigen::Vector2d localPos(pos.x, pos.y);
+        Eigen::Vector2d worldPos = car.pose.T * localPos;
+        return common::Position(worldPos.x(), worldPos.y());
+      }
+      // Already in world frame
+      return pos;
+    };
+    
+    // Helper to transform a pose based on frame_id
+    auto transformPose = [&](const common::SE2& pose, FrameId frame) -> common::SE2 {
+      if (frame == lilsim::CAR) {
+        // Transform from car frame to world frame
+        return car.pose * pose;
+      }
+      return pose;
+    };
+    
+    // Helper to get color for a vertex (with fallback to marker color)
+    auto getVertexColor = [&](const Marker& marker, size_t idx) -> ImU32 {
+      if (idx < marker.colors.size()) {
+        const auto& c = marker.colors[idx];
+        return IM_COL32(c.r, c.g, c.b, c.a);
+      }
+      return IM_COL32(marker.color.r, marker.color.g, marker.color.b, marker.color.a);
+    };
+    
     for (const auto& [key, marker] : markers) {
       // Check visibility
       if (!m_markerSystem->isMarkerVisible(key.ns, key.id)) {
         continue;
       }
 
-      // Convert marker color
+      // Check for color count mismatches and log warnings
+      if (!marker.colors.empty() && marker.colors.size() != marker.points.size()) {
+        if (marker.colors.size() < marker.points.size()) {
+          spdlog::warn("[Marker {}:{}] colors array size ({}) < points size ({}), using fallback color", 
+                       key.ns, key.id, marker.colors.size(), marker.points.size());
+        } else {
+          spdlog::warn("[Marker {}:{}] colors array size ({}) > points size ({}), extra colors ignored", 
+                       key.ns, key.id, marker.colors.size(), marker.points.size());
+        }
+      }
+
+      // Convert marker color (fallback)
       ImU32 markerColor = IM_COL32(marker.color.r, marker.color.g, 
                                      marker.color.b, marker.color.a);
 
       // Render based on marker type
       switch (marker.type) {
-        case MarkerType::LineStrip:
-          if (marker.points.size() >= 2) {
-            for (size_t i = 0; i < marker.points.size() - 1; ++i) {
-              const auto& p1 = marker.points[i];
-              const auto& p2 = marker.points[i + 1];
-              ImVec2 screen1 = worldToScreen((float)p1.x(), (float)p1.y());
-              ImVec2 screen2 = worldToScreen((float)p2.x(), (float)p2.y());
-              float lineWidth = marker.scale.x * cam_zoom;
-              draw_list->AddLine(screen1, screen2, markerColor, lineWidth);
-            }
-          }
+        case lilsim::TEXT: {
+          // Transform pose to world frame
+          common::SE2 worldPose = transformPose(marker.pose, marker.frame_id);
+          ImVec2 screenPos = worldToScreen((float)worldPose.x(), (float)worldPose.y());
+          
+          // Apply scale to font size
+          ImGui::SetWindowFontScale(marker.scale.x);
+          draw_list->AddText(screenPos, markerColor, marker.text.c_str());
+          ImGui::SetWindowFontScale(1.0f);
           break;
+        }
 
-        case MarkerType::Circle: {
-          ImVec2 center = worldToScreen((float)marker.pose.x(), 
-                                        (float)marker.pose.y());
-          float radius = marker.scale.x * cam_zoom;
+        case lilsim::ARROW: {
+          // Transform pose to world frame
+          common::SE2 worldPose = transformPose(marker.pose, marker.frame_id);
+          float worldX = (float)worldPose.x();
+          float worldY = (float)worldPose.y();
+          float worldYaw = (float)worldPose.yaw();
+          
+          // Arrow parameters
+          float length = marker.scale.x;
+          float thickness = marker.scale.y;
+          float headLength = length * 0.2f;  // Head is 20% of total length
+          float headWidth = thickness * 3.0f;
+          
+          // Shaft end point
+          float shaftEndX = worldX + length * std::cos(worldYaw);
+          float shaftEndY = worldY + length * std::sin(worldYaw);
+          
+          // Draw shaft
+          ImVec2 start = worldToScreen(worldX, worldY);
+          ImVec2 shaftEnd = worldToScreen(shaftEndX - headLength * std::cos(worldYaw), 
+                                          shaftEndY - headLength * std::sin(worldYaw));
+          draw_list->AddLine(start, shaftEnd, markerColor, thickness * cam_zoom);
+          
+          // Draw triangular head
+          ImVec2 tip = worldToScreen(shaftEndX, shaftEndY);
+          float perpX = -std::sin(worldYaw);
+          float perpY = std::cos(worldYaw);
+          ImVec2 head1 = worldToScreen(shaftEndX - headLength * std::cos(worldYaw) + headWidth * 0.5f * perpX,
+                                       shaftEndY - headLength * std::sin(worldYaw) + headWidth * 0.5f * perpY);
+          ImVec2 head2 = worldToScreen(shaftEndX - headLength * std::cos(worldYaw) - headWidth * 0.5f * perpX,
+                                       shaftEndY - headLength * std::sin(worldYaw) - headWidth * 0.5f * perpY);
+          draw_list->AddTriangleFilled(tip, head1, head2, markerColor);
+          break;
+        }
+
+        case lilsim::RECTANGLE: {
+          // Transform pose to world frame
+          common::SE2 worldPose = transformPose(marker.pose, marker.frame_id);
+          float worldX = (float)worldPose.x();
+          float worldY = (float)worldPose.y();
+          float worldYaw = (float)worldPose.yaw();
+          
+          float halfWidth = marker.scale.x * 0.5f;
+          float halfHeight = marker.scale.y * 0.5f;
+          
+          // Compute 4 corners in world frame
+          float cosYaw = std::cos(worldYaw);
+          float sinYaw = std::sin(worldYaw);
+          
+          ImVec2 corners[4];
+          float localCorners[4][2] = {
+            {-halfWidth, -halfHeight},
+            { halfWidth, -halfHeight},
+            { halfWidth,  halfHeight},
+            {-halfWidth,  halfHeight}
+          };
+          
+          for (int i = 0; i < 4; ++i) {
+            float lx = localCorners[i][0];
+            float ly = localCorners[i][1];
+            float wx = worldX + lx * cosYaw - ly * sinYaw;
+            float wy = worldY + lx * sinYaw + ly * cosYaw;
+            corners[i] = worldToScreen(wx, wy);
+          }
+          
+          draw_list->AddQuadFilled(corners[0], corners[1], corners[2], corners[3], markerColor);
+          break;
+        }
+
+        case lilsim::CIRCLE: {
+          // Transform pose to world frame
+          common::SE2 worldPose = transformPose(marker.pose, marker.frame_id);
+          ImVec2 center = worldToScreen((float)worldPose.x(), (float)worldPose.y());
+          float radius = marker.scale.x * 0.5f * cam_zoom;  // scale.x is diameter
           draw_list->AddCircleFilled(center, radius, markerColor, 32);
           break;
         }
 
-        // Other marker types can be added here as needed
+        case lilsim::LINE_STRIP: {
+          if (marker.points.size() >= 2) {
+            // Transform all points to world frame
+            std::vector<ImVec2> screenPoints;
+            screenPoints.reserve(marker.points.size());
+            for (const auto& pt : marker.points) {
+              common::Position worldPt = transformPosition(pt, marker.frame_id);
+              screenPoints.push_back(worldToScreen((float)worldPt.x, (float)worldPt.y));
+            }
+            
+            // Draw line segments with per-vertex color interpolation
+            float lineWidth = marker.scale.x * cam_zoom;
+            
+            if (marker.colors.empty()) {
+              // No per-vertex colors, use marker color for all segments
+              for (size_t i = 0; i < screenPoints.size() - 1; ++i) {
+                draw_list->AddLine(screenPoints[i], screenPoints[i + 1], markerColor, lineWidth);
+              }
+            } else {
+              // Use per-vertex colors with gradient effect
+              // For each segment, we'll use AddLine with the start vertex color
+              // For smooth interpolation, we could use multiple segments, but for simplicity
+              // we'll use a gradient approach by drawing each segment with interpolated colors
+              for (size_t i = 0; i < screenPoints.size() - 1; ++i) {
+                ImU32 color1 = getVertexColor(marker, i);
+                ImU32 color2 = getVertexColor(marker, i + 1);
+                
+                // For gradient effect, use ImDrawList path stroke with gradient
+                // Since ImGui doesn't support gradient lines directly, we approximate
+                // by drawing multiple sub-segments with interpolated colors
+                const int subSegments = 8;
+                for (int j = 0; j < subSegments; ++j) {
+                  float t1 = (float)j / subSegments;
+                  float t2 = (float)(j + 1) / subSegments;
+                  
+                  ImVec2 p1 = ImVec2(
+                    screenPoints[i].x + t1 * (screenPoints[i + 1].x - screenPoints[i].x),
+                    screenPoints[i].y + t1 * (screenPoints[i + 1].y - screenPoints[i].y)
+                  );
+                  ImVec2 p2 = ImVec2(
+                    screenPoints[i].x + t2 * (screenPoints[i + 1].x - screenPoints[i].x),
+                    screenPoints[i].y + t2 * (screenPoints[i + 1].y - screenPoints[i].y)
+                  );
+                  
+                  // Interpolate color
+                  float t_mid = (t1 + t2) * 0.5f;
+                  float r1 = static_cast<float>((color1 >> 0) & 0xFF);
+                  float g1 = static_cast<float>((color1 >> 8) & 0xFF);
+                  float b1 = static_cast<float>((color1 >> 16) & 0xFF);
+                  float a1 = static_cast<float>((color1 >> 24) & 0xFF);
+                  float r2 = static_cast<float>((color2 >> 0) & 0xFF);
+                  float g2 = static_cast<float>((color2 >> 8) & 0xFF);
+                  float b2 = static_cast<float>((color2 >> 16) & 0xFF);
+                  float a2 = static_cast<float>((color2 >> 24) & 0xFF);
+                  
+                  ImU32 r = static_cast<ImU32>((1.0f - t_mid) * r1 + t_mid * r2);
+                  ImU32 g = static_cast<ImU32>((1.0f - t_mid) * g1 + t_mid * g2);
+                  ImU32 b = static_cast<ImU32>((1.0f - t_mid) * b1 + t_mid * b2);
+                  ImU32 a = static_cast<ImU32>((1.0f - t_mid) * a1 + t_mid * a2);
+                  
+                  ImU32 interpColor = IM_COL32(r, g, b, a);
+                  draw_list->AddLine(p1, p2, interpColor, lineWidth);
+                }
+              }
+            }
+          }
+          break;
+        }
+
+        case lilsim::CIRCLE_LIST: {
+          if (marker.points.size() > 0) {
+            float radius = marker.scale.x * 0.5f * cam_zoom;  // scale.x is diameter
+            
+            for (size_t i = 0; i < marker.points.size(); ++i) {
+              common::Position worldPt = transformPosition(marker.points[i], marker.frame_id);
+              ImVec2 center = worldToScreen((float)worldPt.x, (float)worldPt.y);
+              ImU32 circleColor = getVertexColor(marker, i);
+              draw_list->AddCircleFilled(center, radius, circleColor, 32);
+            }
+          }
+          break;
+        }
+
+        case lilsim::TRIANGLE_LIST: {
+          // Every 3 points forms a triangle
+          size_t numTriangles = marker.points.size() / 3;
+          
+          for (size_t t = 0; t < numTriangles; ++t) {
+            size_t i0 = t * 3;
+            size_t i1 = t * 3 + 1;
+            size_t i2 = t * 3 + 2;
+            
+            // Transform points to world frame
+            common::Position wp0 = transformPosition(marker.points[i0], marker.frame_id);
+            common::Position wp1 = transformPosition(marker.points[i1], marker.frame_id);
+            common::Position wp2 = transformPosition(marker.points[i2], marker.frame_id);
+            
+            ImVec2 sp0 = worldToScreen((float)wp0.x, (float)wp0.y);
+            ImVec2 sp1 = worldToScreen((float)wp1.x, (float)wp1.y);
+            ImVec2 sp2 = worldToScreen((float)wp2.x, (float)wp2.y);
+            
+            if (marker.colors.empty()) {
+              // Solid color triangle
+              draw_list->AddTriangleFilled(sp0, sp1, sp2, markerColor);
+            } else {
+              // Per-vertex colored triangle with interpolation
+              ImU32 c0 = getVertexColor(marker, i0);
+              ImU32 c1 = getVertexColor(marker, i1);
+              ImU32 c2 = getVertexColor(marker, i2);
+              
+              // ImGui supports gradient triangles via AddTriangleFilled with per-vertex colors
+              // However, the standard AddTriangleFilled doesn't support per-vertex colors
+              // We need to use the lower-level vertex API
+              // For now, use a simple approximation: average color
+              ImU32 r = (((c0 >> 0) & 0xFF) + ((c1 >> 0) & 0xFF) + ((c2 >> 0) & 0xFF)) / 3;
+              ImU32 g = (((c0 >> 8) & 0xFF) + ((c1 >> 8) & 0xFF) + ((c2 >> 8) & 0xFF)) / 3;
+              ImU32 b = (((c0 >> 16) & 0xFF) + ((c1 >> 16) & 0xFF) + ((c2 >> 16) & 0xFF)) / 3;
+              ImU32 a = (((c0 >> 24) & 0xFF) + ((c1 >> 24) & 0xFF) + ((c2 >> 24) & 0xFF)) / 3;
+              ImU32 avgColor = IM_COL32(r, g, b, a);
+              
+              // TODO: Use ImDrawList vertex buffer for proper per-vertex colors
+              draw_list->AddTriangleFilled(sp0, sp1, sp2, avgColor);
+            }
+          }
+          break;
+        }
+
+        case lilsim::MESH_2D:
+          // Not yet implemented
+          break;
+
         default:
           break;
       }

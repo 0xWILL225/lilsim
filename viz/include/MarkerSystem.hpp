@@ -1,6 +1,8 @@
 #pragma once
 
 #include "SE2.hpp"
+#include "Position.hpp"
+#include "comm/messages.pb.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -8,6 +10,10 @@
 #include <cstdint>
 
 namespace viz {
+
+// Use protobuf enums directly
+using FrameId = lilsim::FrameId;
+using MarkerType = lilsim::MarkerType;
 
 /**
  * @brief Color representation with RGBA values (0-255).
@@ -46,35 +52,20 @@ struct Scale2D {
 };
 
 /**
- * @brief Marker types available for 2D visualization.
- */
-enum class MarkerType {
-  Text,
-  Arrow,
-  Rectangle,
-  Circle,
-  LineList,     // Pairs of points forming disconnected lines
-  LineStrip,    // Connected sequence of points
-  RectangleList,
-  CircleList,
-  Points,
-  TriangleList,
-  Mesh2D
-};
-
-/**
  * @brief A single marker for visualization.
  */
 struct Marker {
-  MarkerType type{MarkerType::Circle};
+  MarkerType type{lilsim::CIRCLE};
   common::SE2 pose{0.0, 0.0, 0.0};
   Color color;
   Scale2D scale{1.0f, 1.0f};
   std::optional<double> ttl_sec;  // Time to live in simulation seconds
+  FrameId frame_id{lilsim::WORLD};  // Reference frame
   
   // Type-specific data
   std::string text;                      // For Text markers
-  std::vector<common::SE2> points;       // For line/point-based markers
+  std::vector<common::Position> points;  // For line/point/triangle-based markers
+  std::vector<Color> colors;             // Per-vertex colors (for LineStrip, TriangleList, CircleList)
   
   // Internal state
   double creation_time{0.0};  // Simulation time when created

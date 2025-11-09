@@ -455,16 +455,16 @@ void Application::mainLoop() {
   handleInput();
 
   // Probe sync client connection every 200ms (for UI status indicator)
-  if (m_simulator.isCommEnabled() && m_simulator.isSyncMode()) {
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      now - m_lastConnectionProbe).count();
+  // if (m_simulator.isCommEnabled() && m_simulator.isSyncMode()) {
+  //   auto now = std::chrono::steady_clock::now();
+  //   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+  //     now - m_lastConnectionProbe).count();
     
-    if (elapsed >= 200) {
-      m_simulator.probeConnection();
-      m_lastConnectionProbe = now;
-    }
-  }
+  //   if (elapsed >= 200) {
+  //     m_simulator.probeConnection();
+  //     m_lastConnectionProbe = now;
+  //   }
+  // }
 
   // Get current texture from m_surface BEFORE starting ImGui frame
   WGPUSurfaceTexture m_surfaceTexture = {};
@@ -1008,6 +1008,14 @@ void Application::setupPanels() {
 
   // Parameters section
   m_rightPanel.addSection("Parameters", [this]() {
+    // Sync UI parameters from simulator (in case they were updated externally)
+    m_uiWheelbase = static_cast<float>(m_simulator.getWheelbase());
+    m_uiVMax = static_cast<float>(m_simulator.getVMax());
+    m_uiAxMax = static_cast<float>(m_simulator.getAxMax());
+    m_uiSteerRateMax = static_cast<float>(m_simulator.getSteerRateMax());
+    m_uiDeltaMax = static_cast<float>(m_simulator.getDeltaMax());
+    m_uiSteeringMode = m_simulator.getSteeringMode();
+    
     ImGui::Text("Apply on reset:");
     ImGui::Spacing();
     
@@ -1296,60 +1304,31 @@ void Application::render2D() {
         for (const auto& protoMarker : result.marker_array->markers()) {
         Marker marker;
         
-        // Convert proto marker to internal marker
-        switch (protoMarker.type()) {
-          case lilsim::MarkerType::TEXT:
-            marker.type = MarkerType::Text;
-            break;
-          case lilsim::MarkerType::ARROW:
-            marker.type = MarkerType::Arrow;
-            break;
-          case lilsim::MarkerType::RECTANGLE:
-            marker.type = MarkerType::Rectangle;
-            break;
-          case lilsim::MarkerType::CIRCLE:
-            marker.type = MarkerType::Circle;
-            break;
-          case lilsim::MarkerType::LINE_LIST:
-            marker.type = MarkerType::LineList;
-            break;
-          case lilsim::MarkerType::LINE_STRIP:
-            marker.type = MarkerType::LineStrip;
-            break;
-          case lilsim::MarkerType::RECTANGLE_LIST:
-            marker.type = MarkerType::RectangleList;
-            break;
-          case lilsim::MarkerType::CIRCLE_LIST:
-            marker.type = MarkerType::CircleList;
-            break;
-          case lilsim::MarkerType::POINTS:
-            marker.type = MarkerType::Points;
-            break;
-          case lilsim::MarkerType::TRIANGLE_LIST:
-            marker.type = MarkerType::TriangleList;
-            break;
-          case lilsim::MarkerType::MESH_2D:
-            marker.type = MarkerType::Mesh2D;
-            break;
-          default:
-            marker.type = MarkerType::Circle;
-            break;
-        }
-        
+        // Copy proto marker to internal marker (enums are now the same)
+        marker.type = protoMarker.type();
         marker.pose = common::SE2(protoMarker.pose().x(), 
                                    protoMarker.pose().y(), 
                                    protoMarker.pose().yaw());
-        marker.color = Color(protoMarker.color().r(), 
-                            protoMarker.color().g(), 
-                            protoMarker.color().b(), 
-                            protoMarker.color().a());
+        marker.color = Color(static_cast<uint8_t>(protoMarker.color().r()), 
+                            static_cast<uint8_t>(protoMarker.color().g()), 
+                            static_cast<uint8_t>(protoMarker.color().b()), 
+                            static_cast<uint8_t>(protoMarker.color().a()));
         marker.scale = Scale2D(protoMarker.scale().x(), protoMarker.scale().y());
         marker.text = protoMarker.text();
         marker.visible = protoMarker.visible();
+        marker.frame_id = protoMarker.frame_id();
         
-        // Convert points
+        // Convert points (now using Vec2 instead of Pose)
         for (const auto& pt : protoMarker.points()) {
-          marker.points.emplace_back(pt.x(), pt.y(), pt.yaw());
+          marker.points.emplace_back(pt.x(), pt.y());
+        }
+        
+        // Convert colors
+        for (const auto& c : protoMarker.colors()) {
+          marker.colors.emplace_back(static_cast<uint8_t>(c.r()), 
+                                     static_cast<uint8_t>(c.g()), 
+                                     static_cast<uint8_t>(c.b()), 
+                                     static_cast<uint8_t>(c.a()));
         }
         
         // Set TTL

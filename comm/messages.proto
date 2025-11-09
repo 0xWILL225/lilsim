@@ -66,6 +66,7 @@ enum AdminCommandType {
   STEP  = 4;
   SET_PARAMS = 5;
   SET_MODE = 6;  // Set sync/async mode
+  SET_TRACK = 7; // Load track from file
 }
 
 enum SteeringInputMode {
@@ -74,14 +75,14 @@ enum SteeringInputMode {
 }
 
 message SimParams {
-  double dt              = 1;
-  double wheelbase       = 2;
-  double v_max           = 3;
-  double delta_max       = 4;
-  double Lf              = 5;
-  double ax_max          = 6;
-  double steer_rate_max  = 7;
-  SteeringInputMode steering_mode = 8;
+  optional double dt              = 1;
+  optional double wheelbase       = 2;
+  optional double v_max           = 3;
+  optional double delta_max       = 4;
+  optional double Lf              = 5;
+  optional double ax_max          = 6;
+  optional double steer_rate_max  = 7;
+  optional SteeringInputMode steering_mode = 8;
 }
 
 message AdminCommand {
@@ -91,6 +92,7 @@ message AdminCommand {
   SimParams        params     = 4;  // for SET_PARAMS/INIT
   bool             sync_mode  = 5;  // for SET_MODE
   uint32           control_period_ms = 6; // milliseconds between control requests (sync mode)
+  string           track_path = 7;  // for SET_TRACK
 }
 
 message AdminReply {
@@ -119,32 +121,35 @@ message Pose {
   double yaw = 3;
 }
 
+enum FrameId {
+  WORLD = 0;
+  CAR   = 1;
+}
+
 enum MarkerType {
   TEXT          = 0;
   ARROW         = 1;
   RECTANGLE     = 2;
   CIRCLE        = 3;
-  LINE_LIST     = 4;
-  LINE_STRIP    = 5;
-  RECTANGLE_LIST = 6;
-  CIRCLE_LIST   = 7;
-  POINTS        = 8;
-  TRIANGLE_LIST = 9;
-  MESH_2D       = 10;
+  LINE_STRIP    = 4;
+  CIRCLE_LIST   = 5;
+  TRIANGLE_LIST = 6;
+  MESH_2D       = 7;
 }
 
-// ADD reference frame id
 message Marker {
-  string     ns         = 1;  // namespace
-  int32      id         = 2;  // unique within namespace
-  MarkerType type       = 3;
-  Pose       pose       = 4;
-  Color      color      = 5;
-  Scale2D    scale      = 6;
-  string     text       = 7;  // For TEXT markers
-  repeated Pose points  = 8;  // For LINE_LIST, LINE_STRIP, POINTS
-  double     ttl_sec    = 9;  // Time-to-live (0 = infinite)
-  bool       visible    = 10; // Visibility flag
+  string     ns           = 1;  // namespace
+  int32      id           = 2;  // unique within namespace
+  FrameId    frame_id     = 12; // Reference frame (default: WORLD)
+  MarkerType type         = 3;
+  Pose       pose         = 4;
+  Color      color        = 5;
+  Scale2D    scale        = 6;
+  string     text         = 7;  // For TEXT markers
+  repeated Vec2 points    = 8;  // For LINE_STRIP, CIRCLE_LIST, TRIANGLE_LIST
+  repeated Color colors   = 11; // Per-vertex colors (for LINE_STRIP, TRIANGLE_LIST, CIRCLE_LIST)
+  double     ttl_sec      = 9;  // Time-to-live (0 = infinite)
+  bool       visible      = 10; // Visibility flag
 }
 
 message MarkerArray {

@@ -1,1 +1,1 @@
-protoc --python_out=python_sdk/lilsim --proto_path=comm messages.proto
+protoc --experimental_allow_proto3_optional --python_out=python_sdk/lilsim --proto_path=comm messages.proto
