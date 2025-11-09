@@ -1008,13 +1008,16 @@ void Application::setupPanels() {
 
   // Parameters section
   m_rightPanel.addSection("Parameters", [this]() {
-    // Sync UI parameters from simulator (in case they were updated externally)
-    m_uiWheelbase = static_cast<float>(m_simulator.getWheelbase());
-    m_uiVMax = static_cast<float>(m_simulator.getVMax());
-    m_uiAxMax = static_cast<float>(m_simulator.getAxMax());
-    m_uiSteerRateMax = static_cast<float>(m_simulator.getSteerRateMax());
-    m_uiDeltaMax = static_cast<float>(m_simulator.getDeltaMax());
-    m_uiSteeringMode = m_simulator.getSteeringMode();
+    // Sync UI parameters from simulator only if they were updated externally (via ZMQ)
+    if (m_simulator.checkAndClearParamsUpdatedExternally()) {
+      m_uiWheelbase = static_cast<float>(m_simulator.getWheelbase());
+      m_uiVMax = static_cast<float>(m_simulator.getVMax());
+      m_uiAxMax = static_cast<float>(m_simulator.getAxMax());
+      m_uiSteerRateMax = static_cast<float>(m_simulator.getSteerRateMax());
+      m_uiDeltaMax = static_cast<float>(m_simulator.getDeltaMax());
+      m_uiSteeringMode = m_simulator.getSteeringMode();
+      m_uiDt = static_cast<float>(m_simulator.getDt());
+    }
     
     ImGui::Text("Apply on reset:");
     ImGui::Spacing();

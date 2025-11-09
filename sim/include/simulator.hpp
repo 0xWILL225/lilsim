@@ -93,6 +93,11 @@ public:
   double getDeltaMax() const { return m_params.delta_max; }
   scene::SteeringMode getSteeringMode() const { return m_params.steering_mode; }
   
+  // Check if parameters were updated externally (via ZMQ)
+  bool checkAndClearParamsUpdatedExternally() {
+    return m_paramsUpdatedExternally.exchange(false, std::memory_order_relaxed);
+  }
+  
 private:
   void loop();
 
@@ -119,6 +124,7 @@ private:
   std::atomic<bool> m_conesUpdateRequested{false};
   std::atomic<bool> m_startPoseUpdateRequested{false};
   std::atomic<bool> m_inputUpdateRequested{false};
+  std::atomic<bool> m_paramsUpdatedExternally{false};  // Set when params changed via ZMQ
   std::atomic<uint64_t> m_stepTarget{0}; // 0 = run continuously, >0 = step mode
   std::thread m_thread;
   scene::Scene m_state;

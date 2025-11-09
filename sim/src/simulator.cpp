@@ -206,6 +206,7 @@ void Simulator::loop() {
                   m_params.steering_mode = scene::SteeringMode::Rate;
                 }
               }
+              m_paramsUpdatedExternally.store(true, std::memory_order_relaxed);
               m_resetRequested.store(true, std::memory_order_relaxed);
               msg = "Parameters set, reset requested";
             } else {
