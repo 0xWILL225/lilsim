@@ -58,7 +58,7 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 ### 2. Simulator Module
 
 - Runs at a **fixed timestep (`dt`)** and updates the Scene.
-- Responsible for physics integration (vehicle model, noise models, sensors).
+- Responsible for physics integration (stepping vehicle model, noise models, sensors).
 - Owns the Scene during simulation.
 - Supports two operating modes:
 
@@ -82,10 +82,10 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 - `ControlAck{tick}` messages confirm simulator progress.
 
 ---
-### 3. Visualization Module
+### 3. Visualization Module (GUI)
 
 - Renders the current Scene state and user-defined markers.
-- Runs at 30–60 FPS, reading the “front” Scene buffer.
+- Runs at 60 FPS, reading the “front” Scene buffer.
 - Independent rendering thread.
 
 #### Rendering Stack
@@ -106,7 +106,6 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 - Primitive types: points, lines, meshes, text, transforms, etc.
 - Each marker has color, scale, and optional **TTL (time-to-live)**.
 - Visibility toggles per namespace.
-- Easily extended later with `parent_id` for lightweight grouping.
 
 ### Option 2 (future): Hierarchical / OpenUSD-inspired
 
@@ -148,17 +147,9 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 - Deterministic simulation (record/replay ready)
 - Step-through debugging and visualization
 - Minimal dependencies, modular design
-- High-frequency simulation (1 kHz) with decoupled rendering (60 Hz)
+- High-frequency simulation (~1 kHz) with decoupled rendering (60 Hz)
 - Immediate visual feedback and marker overlays
-- Extensible: multiple frames, noise models, or additional sensors
-
----
-## Future Directions
-
-- Integrate real-time logging and replay.
-- Support driver-in-the-loop experiments
-- Optional hierarchical scene representation (OpenUSD-inspired and compatible).
-- Bump up to optional 3D scene representation, dynamics and rendering.
+- Extensible and flexible: car models, noise models, sensors models
 
 ---
 ## TL;DR

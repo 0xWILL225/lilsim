@@ -1,6 +1,7 @@
 find_package(glfw3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(Protobuf REQUIRED)
 find_package(X11 REQUIRED)
 
 # Add wgpu-native
@@ -43,6 +44,7 @@ set_source_files_properties(
 
 target_include_directories(viz PUBLIC 
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/third_party
   ${CMAKE_SOURCE_DIR}/third_party/wgpu-native/include
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu
@@ -53,7 +55,8 @@ target_link_libraries(viz PUBLIC
   scene 
   sim
   common
-  comm
+  # comm
+  # protobuf::libprotobuf
   glfw
   imgui::imgui
   ImGuiFileDialog

@@ -2,71 +2,58 @@
 
 #include "scene.hpp"
 #include <GLFW/glfw3.h>
+#include <vector>
+#include <optional>
 
 namespace viz {
 
-class MarkerSystem;  // Forward declaration
+class MarkerSystem;
 
-/**
- * @brief Renders the 2D simulation scene with camera controls.
- *
- * Features:
- * - Grid background (1m x 1m cells)
- * - Car rendering as triangle
- * - Cone rendering with color coding
- * - Two camera modes: follow car or free-moving
- * - Zoom support
- */
 class ViewportPanel {
 public:
   enum class CameraMode { Free, CarFollow };
 
-  ViewportPanel(scene::SceneDB& sceneDB, const MarkerSystem* markerSystem = nullptr,
+  struct RenderState {
+      double x{0}, y{0}, yaw{0}; // Car pose
+      double v{0};               // Car velocity
+      double wheelbase{2.8};     // For rendering size
+      double track_width{1.6};   // For rendering size
+      
+      // Optional HUD states
+      std::optional<double> ax;
+      std::optional<double> steering_wheel_angle;
+      std::optional<double> steering_wheel_rate;
+      
+      const std::vector<scene::Cone>* cones{nullptr};
+  };
+
+  ViewportPanel(const MarkerSystem* markerSystem = nullptr,
                 const bool* showCar = nullptr, const bool* showCones = nullptr)
-    : m_sceneDB(sceneDB)
-    , m_markerSystem(markerSystem)
+    : m_markerSystem(markerSystem)
     , m_showCar(showCar)
     , m_showCones(showCones) {
   }
 
-  /**
-   * @brief Draws the viewport with scene rendering.
-   *
-   * @param x X position of viewport in window
-   * @param y Y position of viewport in window
-   * @param width Width of viewport in pixels
-   * @param height Height of viewport in pixels
-   */
-  void draw(float x, float y, float width, float height);
+  void draw(float x, float y, float width, float height, const RenderState& state);
 
-  /**
-   * @brief Handles keyboard and mouse input for camera control.
-   *
-   * @param window GLFW window handle
-   */
-  void handleInput(GLFWwindow* window);
+  void handleInput(GLFWwindow* window, const RenderState& state); 
 
-  // Camera state (public for external control)
+  // Camera state
   CameraMode cameraMode = CameraMode::CarFollow;
   float followCarZoom = 50.0f;
   float freeCameraX = 0.0f;
   float freeCameraY = 0.0f;
   float freeCameraZoom = 50.0f;
 
-  /**
-   * @brief Check if the mouse is hovering over this viewport.
-   */
   bool isHovered() const {
     return m_isHovered;
   }
 
 private:
-  scene::SceneDB& m_sceneDB;
-  const MarkerSystem* m_markerSystem;  // Read-only access to markers
-  const bool* m_showCar;               // Read-only access to car visibility
-  const bool* m_showCones;             // Read-only access to cones visibility
+  const MarkerSystem* m_markerSystem;
+  const bool* m_showCar;
+  const bool* m_showCones;
   
-  // Mouse state for panning
   bool m_mouseLeftPressed = false;
   float m_lastMouseX = 0.0f;
   float m_lastMouseY = 0.0f;
@@ -75,6 +62,3 @@ private:
 };
 
 } // namespace viz
-
-
-

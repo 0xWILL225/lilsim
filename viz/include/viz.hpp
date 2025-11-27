@@ -2,7 +2,6 @@
 
 #define GLFW_INCLUDE_NONE
 
-// Platform-specific native window access
 #if defined(__linux__)
 #define GLFW_EXPOSE_NATIVE_X11
 #elif defined(__APPLE__)
@@ -27,22 +26,10 @@ namespace comm {
 
 namespace viz {
 
-/**
- * @brief Main visualization application class that manages the rendering window
- * and WebGPU context.
- *
- * This class encapsulates all visualization-related functionality including:
- * - GLFW window management
- * - WebGPU device initialization and configuration
- * - ImGui rendering setup
- * - Main rendering loop execution
- *
- * The application supports Linux (X11), macOS (Metal), and Windows platforms.
- */
 class Application {
 public:
   Application(scene::SceneDB& db, sim::Simulator& sim);
-  ~Application(); // Defined in .cpp to handle unique_ptr with forward-declared type
+  ~Application(); 
 
   bool initialize();
   void terminate();
@@ -56,16 +43,14 @@ public:
   SidePanel m_leftPanel;
   MarkerSystem m_markerSystem;
   
-  // Simulated object visibility
   bool m_showCar{true};
   bool m_showCones{true};
 
   // Communication
-  std::unique_ptr<comm::MarkerSubscriber> m_markerSub;
+  // std::unique_ptr<comm::MarkerSubscriber> m_markerSub;
   std::chrono::steady_clock::time_point m_lastConnectionProbe;
 
 private:
-  // References to scene and simulator
   scene::SceneDB& m_sceneDB;
   sim::Simulator& m_simulator;
 
@@ -82,27 +67,39 @@ private:
 
   float m_clearColor[4] = {0.45f, 0.55f, 0.60f, 1.00f};
 
-  // Frame rate limiting
-  double m_targetFrameTime = 1.0 / 60.0; // 60 FPS
+  double m_targetFrameTime = 1.0 / 60.0;
   double m_lastFrameTime = 0.0;
 
-  // Input state for car control
   bool m_keyW = false, m_keyA = false, m_keyS = false, m_keyD = false;
 
-  // UI state for simulation parameters
-  float m_uiWheelbase = static_cast<float>(common::CarDefaults::wheelbase);
-  float m_uiVMax = static_cast<float>(common::CarDefaults::v_max);
-  float m_uiAxMax = static_cast<float>(common::CarDefaults::ax_max);
-  float m_uiSteerRateMax = static_cast<float>(common::CarDefaults::steer_rate_max);
-  float m_uiDeltaMax = static_cast<float>(common::CarDefaults::delta_max);
-  scene::SteeringMode m_uiSteeringMode = scene::SteeringMode::Rate;
-  float m_uiDt = static_cast<float>(common::CarDefaults::dt);
+  std::vector<double> m_uiParamValues;
+  std::vector<int32_t> m_uiSettingValues;
+  
+  // Cache indices
+  int m_inputIdxWheelAngle = -1;
+  int m_inputIdxWheelRate = -1;
+  int m_inputIdxAx = -1;
+  
+  int m_stateIdxX = -1;
+  int m_stateIdxY = -1;
+  int m_stateIdxYaw = -1;
+  int m_stateIdxV = -1;
+  int m_stateIdxAx = -1;
+  int m_stateIdxSteerWheelAngle = -1;
+  int m_stateIdxSteerWheelRate = -1;
+  
+  int m_paramIdxWheelbase = -1;
+  int m_paramIdxTrackWidth = -1;
+  int m_settingIdxSteeringMode = -1;
+  
   int m_stepN = 10;
 
-  // Track loading state
   char m_trackDirBuffer[512] = "";
   std::vector<std::string> m_availableTracks;
   int m_selectedTrackIndex = -1;
+  
+  std::vector<sim::Simulator::ModelInfo> m_availableModels;
+  int m_selectedModelIndex = -1;
 
   bool initGLFW();
   bool initWebGPU();
@@ -114,6 +111,8 @@ private:
   void render2D();
   void setupPanels();
   void scanTrackDirectory();
+  void refreshAvailableModels();
+  void onModelChanged(); 
 };
 
 } // namespace viz

@@ -3,10 +3,14 @@
 #include <thread>
 #include <optional>
 #include <memory>
+#include <vector>
+#include <string>
+#include <mutex>
 
-#include "CarDefaults.hpp"
+#include "CarDefaults.hpp" 
 #include "scene.hpp"
 #include "SE2.hpp"
+#include "ModelLoader.hpp"
 
 namespace comm {
   class CommServer;
@@ -16,15 +20,18 @@ namespace sim {
 
 class Simulator {
 public:
-  explicit Simulator(scene::SceneDB& db); // Defined in .cpp to handle unique_ptr with forward-declared type
-  ~Simulator(); // Defined in .cpp to handle unique_ptr with forward-declared type
+  explicit Simulator(scene::SceneDB& db);
+  ~Simulator();
 
   void start();
   void stop();
-  void setInput(scene::CarInput const& u) {
+  
+  void setInput(const std::vector<double>& u) {
     m_inputUpdateRequested.store(true, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(m_inputMutex);
     m_newInput = u;
   }
+  
   void pause() {
     m_paused.store(true, std::memory_order_relaxed);
   }
@@ -37,30 +44,47 @@ public:
   void step(uint64_t numTicks) {
     m_stepTarget.store(numTicks, std::memory_order_relaxed);
   }
-  double getDt() const {
-    return m_params.dt;
-  }
+  
+  double getDt() const;
+  
   uint64_t getTicksRemaining() const {
     return m_stepTarget.load(std::memory_order_relaxed);
   }
-  void reset(double wheelbase, double v_max, double ax_max, double steer_rate_max, 
-             double delta_max, scene::SteeringMode steering_mode, double dt) {
+  
+  void reset() {
     m_resetRequested.store(true, std::memory_order_relaxed);
-    m_params.wheelbase = wheelbase;
-    m_params.v_max = v_max;
-    m_params.ax_max = ax_max;
-    m_params.steer_rate_max = steer_rate_max;
-    m_params.delta_max = delta_max;
-    m_params.steering_mode = steering_mode;
-    m_params.dt = dt;
   }
+
   void setCones(const std::vector<scene::Cone>& cones) {
     m_conesUpdateRequested.store(true, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(m_dataMutex);
     m_newCones = cones;
   }
   void setStartPose(const common::SE2& pose) {
     m_startPoseUpdateRequested.store(true, std::memory_order_relaxed);
     m_newStartPose = pose;
+  }
+
+  // Model Management
+  struct ModelInfo {
+      std::string path;
+      std::string name;
+  };
+  std::vector<ModelInfo> getAvailableModels();
+  
+  bool loadModel(const std::string& modelPath);
+  
+  // Gets the currently loaded model name (safe copy)
+  std::string getCurrentModelName() const;
+  
+  const CarModelDescriptor* getCurrentModelDescriptor() const;
+
+  // Parameter updates
+  void setParam(size_t index, double value);
+  void setSetting(size_t index, int32_t value);
+  
+  bool checkAndClearModelChanged() {
+    return m_modelChanged.exchange(false, std::memory_order_relaxed);
   }
 
   // Communication
@@ -85,37 +109,9 @@ public:
   }
   bool isSyncClientConnected() const;
   
-  // Parameter getters for UI
-  double getWheelbase() const { return m_params.wheelbase; }
-  double getVMax() const { return m_params.v_max; }
-  double getAxMax() const { return m_params.ax_max; }
-  double getSteerRateMax() const { return m_params.steer_rate_max; }
-  double getDeltaMax() const { return m_params.delta_max; }
-  scene::SteeringMode getSteeringMode() const { return m_params.steering_mode; }
-  
-  // Check if parameters were updated externally (via ZMQ)
-  bool checkAndClearParamsUpdatedExternally() {
-    return m_paramsUpdatedExternally.exchange(false, std::memory_order_relaxed);
-  }
-  
 private:
   void loop();
-
-  /**
-   * @brief Probe sync client connection
-   * Only meaningful when in sync mode with comm enabled
-   */
   void probeConnection();
-
-  struct Params { // Settable parameters
-    double wheelbase{common::CarDefaults::wheelbase};
-    double v_max{common::CarDefaults::v_max};
-    double ax_max{common::CarDefaults::ax_max};
-    double steer_rate_max{common::CarDefaults::steer_rate_max};
-    double delta_max{common::CarDefaults::delta_max};
-    scene::SteeringMode steering_mode{scene::SteeringMode::Rate};
-    double dt{common::CarDefaults::dt};
-  };
 
   scene::SceneDB& m_db;
   std::atomic<bool> m_running{false};
@@ -124,23 +120,40 @@ private:
   std::atomic<bool> m_conesUpdateRequested{false};
   std::atomic<bool> m_startPoseUpdateRequested{false};
   std::atomic<bool> m_inputUpdateRequested{false};
-  std::atomic<bool> m_paramsUpdatedExternally{false};  // Set when params changed via ZMQ
-  std::atomic<uint64_t> m_stepTarget{0}; // 0 = run continuously, >0 = step mode
+  
+  std::atomic<uint64_t> m_stepTarget{0}; 
   std::thread m_thread;
   scene::Scene m_state;
-  Params m_params;
+  
+  std::mutex m_dataMutex;
   std::vector<scene::Cone> m_newCones;
+  
   common::SE2 m_newStartPose{0.0, 0.0, 0.0};
-  common::SE2 m_startPose{0.0, 0.0, 0.0}; // Current starting pose
-  scene::CarInput m_newInput{0.0, 0.0};     // New input from setInput()
+  common::SE2 m_startPose{0.0, 0.0, 0.0}; 
+  
+  std::mutex m_inputMutex;
+  std::vector<double> m_newInput;
 
+  // Model
+  std::unique_ptr<LoadedCarModel> m_modelLoader;
+  CarModel* m_carModel{nullptr};
+  mutable std::string m_currentModelName;
+  std::atomic<bool> m_modelChanged{false};
+  
+  struct PendingParamUpdate { size_t index; double value; };
+  struct PendingSettingUpdate { size_t index; int32_t value; };
+  
+  std::mutex m_paramMutex; 
+  std::vector<PendingParamUpdate> m_pendingParamUpdates;
+  std::vector<PendingSettingUpdate> m_pendingSettingUpdates;
+  
   // Communication
   std::unique_ptr<comm::CommServer> m_commServer;
   std::atomic<bool> m_commEnabled{false};
-  std::atomic<bool> m_syncMode{false};      // true = synchronous, false = asynchronous
-  std::atomic<uint32_t> m_controlPeriodMs{100}; // Control period in milliseconds (sync mode)
-  std::atomic<uint32_t> m_controlPeriodTicks{10}; // Control period in ticks (computed from ms and dt)
-  scene::CarInput m_lastControlInput{0.0, 0.0};    // Last control from client (ZMQ)
+  std::atomic<bool> m_syncMode{false}; 
+  std::atomic<uint32_t> m_controlPeriodMs{100};
+  std::atomic<uint32_t> m_controlPeriodTicks{10}; 
+  std::vector<double> m_lastControlInput;
 };
 
 } // namespace sim

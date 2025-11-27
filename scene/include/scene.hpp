@@ -5,58 +5,9 @@
 
 #include <atomic>
 #include <vector>
+#include <cstdint>
 
 namespace scene {
-
-enum class SteeringMode {
-  Angle,  // Steering angle is the control input
-  Rate    // Steering rate is the control input, angle is integrated
-};
-
-struct CarInput {
-  double delta{0.0};      // steering angle (radians) - state when Rate mode, input when Angle mode
-  double delta_dot{0.0};  // steering rate (rad/s) - input when Rate mode
-  double ax{0.0};         // longitudinal acceleration (m/s^2)
-  
-  // Input limits
-  double delta_max{common::CarDefaults::delta_max};           // max steering angle magnitude
-  double steer_rate_max{common::CarDefaults::steer_rate_max}; // max steering rate magnitude
-  double ax_max{common::CarDefaults::ax_max};                 // max acceleration magnitude
-};
-
-struct CarState {
-
-  CarState(double wheelbase_ = common::CarDefaults::wheelbase,
-           double Lf_ = common::CarDefaults::Lf,
-           double v_max_ = common::CarDefaults::v_max)
-    : wheelbase(wheelbase_)
-    , Lf(Lf_)
-    , Lr(wheelbase_ - Lf_)
-    , v_max(v_max_) {
-    assert(Lf > 0.0 && Lf < wheelbase && Lr > 0.0 && Lr < wheelbase);
-    assert(v_max > 0.0);
-  }
-
-  double wheelbase;
-  double Lf;
-  double Lr;
-  double v_max;     // maximum velocity (state limit)
-  
-
-  common::SE2 pose;
-  double v{0.0};
-  double yaw_rate{0.0};
-
-  double x() const {
-    return pose.x();
-  }
-  double y() const {
-    return pose.y();
-  }
-  double yaw() const {
-    return pose.yaw();
-  }
-};
 
 enum class ConeType { Blue, Yellow, Orange, BigOrange };
 
@@ -74,9 +25,12 @@ struct Cone {
 };
 
 struct Scene {
-  CarState car;
-  CarInput car_input;           // Current control input/state
-  SteeringMode steering_mode{SteeringMode::Rate};  // Default to Rate mode
+  // Raw state values from the car model
+  std::vector<double> car_state_values;
+  
+  // Raw input values used in this step
+  std::vector<double> car_input_values;
+
   std::vector<Cone> cones;
 };
 

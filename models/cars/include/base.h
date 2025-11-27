@@ -12,26 +12,15 @@
 extern "C" {
 #endif
 
-// ============================================================
-// State tags
-// ============================================================
-//
-// Tags describe the semantic meaning of a state channel.
-// Plugins MAY leave a channel tagged as CAR_STATE_TAG_UNKNOWN,
-// but must provide at least one channel for each required tag
-// listed below.
+// Mandatory canonical parameter and state names
+#define WHEELBASE_PARAM_NAME "wheelbase"
+#define TRACK_WIDTH_PARAM_NAME "track_width"
+#define X_STATE_NAME "x"
+#define Y_STATE_NAME "y"
+#define YAW_STATE_NAME "yaw"
+#define WHEEL_FL_ANGLE_STATE_NAME "wheel_fl_angle"
+#define WHEEL_FR_ANGLE_STATE_NAME "wheel_fr_angle"
 
-typedef enum CarStateTag {
-  CAR_STATE_TAG_UNKNOWN = 0,
-
-  // Required tags (at least one channel for each must exist):
-  CAR_STATE_TAG_POSE_X       = 1,  // car pose x [m] in world
-  CAR_STATE_TAG_POSE_Y       = 2,  // car pose y [m] in world
-  CAR_STATE_TAG_POSE_YAW     = 3,  // car heading [rad]
-  CAR_STATE_TAG_STEER_ANGLE  = 4,  // front road-wheel steering angle [rad]
-
-  // Optional tags can be added later (e.g. AX, STEER_RATE, etc.)
-} CarStateTag;
 
 // ============================================================
 // CarModelDescriptor
@@ -43,7 +32,7 @@ typedef enum CarStateTag {
 //
 // Conceptually, there is a separation between:
 //
-//  - Metadata (names, min, max, tags, options) -> read-only to sim/viz
+//  - Metadata (names, min, max, options) -> read-only to sim/viz
 //  - Values (param_values, setting_values, input_values, state_values)
 //    -> written by sim/GUI, read/written by plugin.
 //
@@ -134,14 +123,12 @@ typedef struct CarModelDescriptor {
   // state_names[i]   : null-terminated state name
   // state_min[i]     : typical minimum value (for plotting / GUI scaling)
   // state_max[i]     : typical maximum value
-  // state_tags[i]    : semantic tag (CarStateTag)
   // state_values[i]  : current state value (written by plugin each step)
 
   size_t      num_states;
   const char* const* state_names;   // [num_states]
   const double*      state_min;     // [num_states]
   const double*      state_max;     // [num_states]
-  const CarStateTag* state_tags;    // [num_states]
   double*            state_values;  // [num_states]
 
 } CarModelDescriptor;
@@ -165,10 +152,11 @@ typedef struct CarModel CarModel;
 // Each model plugin must export these symbols with C linkage.
 // The simulator will dlopen/LoadLibrary the shared object and
 // look up these functions by name (or via a small factory layer).
+// dt is needed to initialize lagged dynamics, if applicable.
 
 // Create a new model instance.
 // Ownership: simulator must eventually call car_model_destroy().
-CarModel* car_model_create(void);
+CarModel* car_model_create(double dt);
 
 // Destroy a model instance and free its resources.
 void car_model_destroy(CarModel* model);
@@ -180,7 +168,7 @@ void car_model_destroy(CarModel* model);
 //
 // The simulator and viz will:
 //
-//  - Read metadata (names, min, max, tags, option lists).
+//  - Read metadata (names, min, max, option lists).
 //  - Read/write param_values, setting_values, input_values.
 //  - Read state_values after each step.
 const CarModelDescriptor* car_model_get_descriptor(CarModel* model);
@@ -194,9 +182,10 @@ const char* car_model_get_name(void);
 // Parameters and settings are assumed to already be in desired
 // values (param_values / setting_values). The plugin should
 // reinitialize its internal state based on these values.
+// dt is needed to initialize lagged dynamics, if applicable.
 //
 // state_values[] may be initialized by the plugin in this call.
-void car_model_reset(CarModel* model);
+void car_model_reset(CarModel* model, double dt);
 
 // Advance the model by dt seconds.
 //

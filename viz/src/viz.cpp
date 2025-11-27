@@ -2,7 +2,7 @@
 #include "KeyBindings.hpp"
 #include "TrackLoader.hpp"
 #include "TextureManager.hpp"
-#include "comm/CommServer.hpp"
+#include "models/cars/include/base.h"
 
 #include <GLFW/glfw3native.h>
 #include <spdlog/spdlog.h>
@@ -13,7 +13,6 @@
 #include <chrono>
 #include <thread>
 
-// Undefine X11 macros that conflict with other headers
 #ifdef Success
 #undef Success
 #endif
@@ -25,11 +24,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_wgpu.h>
 
-// Helper macro for wgpu-native string views
-#define WGPU_STR(s)                                                            \
-  WGPUStringView {                                                             \
-    s, WGPU_STRLEN                                                             \
-  }
+#define WGPU_STR(s) WGPUStringView { s, WGPU_STRLEN }
 
 namespace viz {
 
@@ -38,483 +33,631 @@ Application::Application(scene::SceneDB& db, sim::Simulator& sim)
   , m_simulator(sim)
   , m_rightPanel("Admin Panel", SidePanel::Side::Right, 300.0f)
   , m_leftPanel("Display", SidePanel::Side::Left, 300.0f)
-  , m_viewportPanel(db, &m_markerSystem, &m_showCar, &m_showCones)
+  , m_viewportPanel(nullptr, &m_showCar, &m_showCones) 
   , m_lastConnectionProbe(std::chrono::steady_clock::now()) {
-  // Set default track directory to executable path + /tracks
+  
   std::filesystem::path exePath = std::filesystem::current_path();
   std::string defaultTrackPath = (exePath / "tracks").string();
   strncpy(m_trackDirBuffer, defaultTrackPath.c_str(), sizeof(m_trackDirBuffer) - 1);
   m_trackDirBuffer[sizeof(m_trackDirBuffer) - 1] = '\0';
   
+  m_viewportPanel = ViewportPanel(&m_markerSystem, &m_showCar, &m_showCones);
+
   setupPanels();
   
-  // Scan the default directory for tracks
   scanTrackDirectory();
-  
-  // Initialize marker subscriber
-  m_markerSub = std::make_unique<comm::MarkerSubscriber>();
-  if (m_markerSub->start()) {
-    spdlog::info("[viz] Marker subscriber started");
-  } else {
-    spdlog::error("[viz] Failed to start marker subscriber");
-  }
+  refreshAvailableModels();
 }
 
 Application::~Application() {
-  // Destructor defined here to handle unique_ptr with forward-declared types
-  if (m_markerSub) {
-    m_markerSub->stop();
-  }
 }
 
-/**
- * @brief GLFW callback for framebuffer resize events.
- *
- * This is a C-style callback required by GLFW. It retrieves the Application
- * instance from the window user pointer and forwards the resize event.
- *
- * @param window The GLFW window that was resized
- * @param width New framebuffer width in pixels
- * @param height New framebuffer height in pixels
- */
 static void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
   auto* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-  if (app) {
-    app->onResize(width, height);
-  }
+  if (app) app->onResize(width, height);
 }
 
-/**
- * @brief GLFW callback for scroll events (used for zoom).
- *
- * @param window The GLFW window
- * @param xoffset Horizontal scroll offset
- * @param yoffset Vertical scroll offset (used for zoom)
- */
 static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
   (void)xoffset;
   auto* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
   if (app) {
-    // Only zoom if hovering over the viewport
-    if (!app->m_viewportPanel.isHovered()) {
-      return;
-    }
-
-    // Zoom in/out with scroll wheel (10% per scroll tick)
+    if (!app->m_viewportPanel.isHovered()) return;
     float zoomDelta = (yoffset > 0) ? 1.1f : 0.9f;
-
     if (app->m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free) {
       app->m_viewportPanel.freeCameraZoom *= zoomDelta;
-      app->m_viewportPanel.freeCameraZoom =
-        std::clamp(app->m_viewportPanel.freeCameraZoom, 5.0f, 500.0f);
+      app->m_viewportPanel.freeCameraZoom = std::clamp(app->m_viewportPanel.freeCameraZoom, 5.0f, 500.0f);
     } else {
       app->m_viewportPanel.followCarZoom *= zoomDelta;
-      app->m_viewportPanel.followCarZoom =
-        std::clamp(app->m_viewportPanel.followCarZoom, 5.0f, 500.0f);
+      app->m_viewportPanel.followCarZoom = std::clamp(app->m_viewportPanel.followCarZoom, 5.0f, 500.0f);
     }
   }
 }
 
-/**
- * @brief Callback invoked when WebGPU m_adapter request completes.
- *
- * This callback is called asynchronously by wgpu-native when the m_adapter
- * request initiated by wgpuInstanceRequestAdapter() finishes.
- *
- * @param status The status of the m_adapter request
- * @param m_adapter The requested m_adapter handle (if successful)
- * @param message Optional error message
- * @param userdata1 Pointer to store the m_adapter handle
- * @param userdata2 Reserved for future use
- */
 static void onAdapterRequestEnded(WGPURequestAdapterStatus status,
                                   WGPUAdapter m_adapter, WGPUStringView message,
                                   void* userdata1, void* userdata2) {
-  (void)userdata2;
-  (void)message;
-  if (status == WGPURequestAdapterStatus_Success) {
-    *(WGPUAdapter*)userdata1 = m_adapter;
-  } else {
-    fprintf(stderr, "Failed to get WebGPU m_adapter\n");
-  }
+  (void)userdata2; (void)message;
+  if (status == WGPURequestAdapterStatus_Success) *(WGPUAdapter*)userdata1 = m_adapter;
 }
 
-/**
- * @brief Callback invoked when WebGPU m_device request completes.
- *
- * This callback is called asynchronously by wgpu-native when the m_device
- * request initiated by wgpuAdapterRequestDevice() finishes.
- *
- * @param status The status of the m_device request
- * @param m_device The requested m_device handle (if successful)
- * @param message Optional error message
- * @param userdata1 Pointer to store the m_device handle
- * @param userdata2 Reserved for future use
- */
 static void onDeviceRequestEnded(WGPURequestDeviceStatus status,
                                  WGPUDevice m_device, WGPUStringView message,
                                  void* userdata1, void* userdata2) {
-  (void)userdata2;
-  (void)message;
-  if (status == WGPURequestDeviceStatus_Success) {
-    *(WGPUDevice*)userdata1 = m_device;
-  } else {
-    fprintf(stderr, "Failed to get WebGPU m_device\n");
-  }
+  (void)userdata2; (void)message;
+  if (status == WGPURequestDeviceStatus_Success) *(WGPUDevice*)userdata1 = m_device;
 }
 
-/**
- * @brief Initializes the GLFW library and creates the application window.
- *
- * This method:
- * - Initializes GLFW
- * - Configures GLFW to not create a default graphics context (we use WebGPU)
- * - Creates a window with the configured dimensions
- *
- * @return true if initialization succeeds, false otherwise
- */
 bool Application::initGLFW() {
-  fprintf(stderr, "[DEBUG] Initializing GLFW...\n");
-  if (!glfwInit()) {
-    fprintf(stderr, "Failed to initialize GLFW\n");
-    return false;
-  }
-
+  if (!glfwInit()) return false;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  fprintf(stderr, "[DEBUG] Creating window...\n");
   m_window = glfwCreateWindow(m_width, m_height, "lilsim", nullptr, nullptr);
-
-  if (!m_window) {
-    fprintf(stderr, "Failed to create window\n");
-    return false;
-  }
-
-  // Set up window user pointer and callbacks
+  if (!m_window) return false;
   glfwSetWindowUserPointer(m_window, this);
   glfwSetFramebufferSizeCallback(m_window, framebufferSizeCallback);
   glfwSetScrollCallback(m_window, scrollCallback);
-
-  fprintf(stderr, "[DEBUG] GLFW initialized successfully\n");
   return true;
 }
 
-/**
- * @brief Initializes WebGPU instance, m_surface, m_adapter, m_device, and
- * m_queue.
- *
- * This method performs the complete WebGPU initialization sequence:
- * 1. Creates a WebGPU instance
- * 2. Creates a platform-specific m_surface (X11/Metal/Win32)
- * 3. Requests and waits for a compatible m_adapter
- * 4. Requests and waits for a logical m_device
- * 5. Obtains the command m_queue
- * 6. Configures the m_surface with appropriate format and present mode
- *
- * The m_surface creation is platform-specific:
- * - Linux: Uses X11 display and window handles
- * - macOS: Creates a Metal layer and attaches it to the Cocoa window
- * - Windows: Uses Win32 HWND and HINSTANCE
- *
- * @return true if all initialization steps succeed, false otherwise
- */
 bool Application::initWebGPU() {
-  // Create instance
-  fprintf(stderr, "[DEBUG] Creating WebGPU instance...\n");
   WGPUInstanceDescriptor instanceDesc = {};
-  instanceDesc.nextInChain = nullptr;
   m_instance = wgpuCreateInstance(&instanceDesc);
-  if (!m_instance) {
-    fprintf(stderr, "Failed to create WebGPU instance\n");
-    return false;
-  }
-  fprintf(stderr, "[DEBUG] WebGPU instance created\n");
+  if (!m_instance) return false;
 
-  // Create m_surface (platform-specific)
 #if defined(__linux__)
-  // Linux X11
-  WGPUSurfaceSourceXlibWindow fromXlibWindow = {};
-  fromXlibWindow.chain.sType = WGPUSType_SurfaceSourceXlibWindow;
-  fromXlibWindow.display = glfwGetX11Display();
-  fromXlibWindow.window = glfwGetX11Window(m_window);
-
+  WGPUSurfaceSourceXlibWindow fromXlib = {};
+  fromXlib.chain.sType = WGPUSType_SurfaceSourceXlibWindow;
+  fromXlib.display = glfwGetX11Display();
+  fromXlib.window = glfwGetX11Window(m_window);
   WGPUSurfaceDescriptor surfaceDesc = {};
-  surfaceDesc.nextInChain =
-    reinterpret_cast<WGPUChainedStruct const*>(&fromXlibWindow);
+  surfaceDesc.nextInChain = reinterpret_cast<WGPUChainedStruct const*>(&fromXlib);
   m_surface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-
 #elif defined(__APPLE__)
-  // macOS Metal
-  id metal_layer = nullptr;
-  NSWindow* ns_window = glfwGetCocoaWindow(m_window);
-  [ns_window.contentView setWantsLayer:YES];
-  metal_layer = [CAMetalLayer layer];
-  [ns_window.contentView setLayer:metal_layer];
-
-  WGPUSurfaceSourceMetalLayer fromMetalLayer = {};
-  fromMetalLayer.chain.sType = WGPUSType_SurfaceSourceMetalLayer;
-  fromMetalLayer.layer = metal_layer;
-
-  WGPUSurfaceDescriptor surfaceDesc = {};
-  surfaceDesc.nextInChain =
-    reinterpret_cast<WGPUChainedStruct const*>(&fromMetalLayer);
-  m_surface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-
 #elif defined(_WIN32)
-  // Windows
-  HWND hwnd = glfwGetWin32Window(m_window);
-  HINSTANCE hinstance = GetModuleHandle(nullptr);
-
-  WGPUSurfaceSourceWindowsHWND fromWindowsHWND = {};
-  fromWindowsHWND.chain.sType = WGPUSType_SurfaceSourceWindowsHWND;
-  fromWindowsHWND.hinstance = hinstance;
-  fromWindowsHWND.hwnd = hwnd;
-
-  WGPUSurfaceDescriptor surfaceDesc = {};
-  surfaceDesc.nextInChain =
-    reinterpret_cast<WGPUChainedStruct const*>(&fromWindowsHWND);
-  m_surface = wgpuInstanceCreateSurface(m_instance, &surfaceDesc);
-
-#else
-#error "Unsupported platform - only Linux, macOS, and Windows are supported"
 #endif
 
-  if (!m_surface) {
-    fprintf(stderr, "Failed to create m_surface\n");
-    return false;
-  }
-  fprintf(stderr, "[DEBUG] Surface created\n");
+  if (!m_surface) return false;
 
-  // Request m_adapter
-  fprintf(stderr, "[DEBUG] Requesting m_adapter...\n");
-  WGPURequestAdapterOptions m_adapterOpts = {};
-  m_adapterOpts.nextInChain = nullptr;
-  m_adapterOpts.compatibleSurface = m_surface;
-  m_adapterOpts.powerPreference = WGPUPowerPreference_HighPerformance;
+  WGPURequestAdapterOptions adapterOpts = {};
+  adapterOpts.compatibleSurface = m_surface;
+  adapterOpts.powerPreference = WGPUPowerPreference_HighPerformance;
+  WGPURequestAdapterCallbackInfo cbInfo = {};
+  cbInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+  cbInfo.callback = onAdapterRequestEnded;
+  cbInfo.userdata1 = &m_adapter;
+  wgpuInstanceRequestAdapter(m_instance, &adapterOpts, cbInfo);
 
-  WGPURequestAdapterCallbackInfo m_adapterCallbackInfo = {};
-  m_adapterCallbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-  m_adapterCallbackInfo.callback = onAdapterRequestEnded;
-  m_adapterCallbackInfo.userdata1 = &m_adapter;
-
-  wgpuInstanceRequestAdapter(m_instance, &m_adapterOpts, m_adapterCallbackInfo);
-
-  // Wait for m_adapter
-  int waitCount = 0;
   while (!m_adapter) {
-    if (waitCount % 100 == 0) {
-      fprintf(stderr, "[DEBUG] Waiting for m_adapter... (%d iterations)\n",
-              waitCount);
-    }
     wgpuInstanceProcessEvents(m_instance);
-    glfwPollEvents(); // Keep window responsive during initialization
-    waitCount++;
+    glfwPollEvents();
   }
-  fprintf(stderr, "[DEBUG] Adapter acquired\n");
 
-  // Create m_device
-  fprintf(stderr, "[DEBUG] Requesting m_device...\n");
-  WGPUDeviceDescriptor m_deviceDesc = {};
-  m_deviceDesc.nextInChain = nullptr;
-  m_deviceDesc.label = WGPU_STR("Main Device");
+  WGPUDeviceDescriptor deviceDesc = {};
+  deviceDesc.label = WGPU_STR("Main Device");
+  WGPURequestDeviceCallbackInfo devCbInfo = {};
+  devCbInfo.mode = WGPUCallbackMode_AllowSpontaneous;
+  devCbInfo.callback = onDeviceRequestEnded;
+  devCbInfo.userdata1 = &m_device;
+  wgpuAdapterRequestDevice(m_adapter, &deviceDesc, devCbInfo);
 
-  WGPURequestDeviceCallbackInfo callbackInfo = {};
-  callbackInfo.mode = WGPUCallbackMode_AllowSpontaneous;
-  callbackInfo.callback = onDeviceRequestEnded;
-  callbackInfo.userdata1 = &m_device;
-
-  wgpuAdapterRequestDevice(m_adapter, &m_deviceDesc, callbackInfo);
-
-  // Wait for m_device
-  waitCount = 0;
   while (!m_device) {
-    if (waitCount % 100 == 0) {
-      fprintf(stderr, "[DEBUG] Waiting for m_device... (%d iterations)\n",
-              waitCount);
-    }
     wgpuInstanceProcessEvents(m_instance);
-    glfwPollEvents(); // Keep window responsive during initialization
-    waitCount++;
+    glfwPollEvents();
   }
-  fprintf(stderr, "[DEBUG] Device acquired\n");
 
   m_queue = wgpuDeviceGetQueue(m_device);
-  fprintf(stderr, "[DEBUG] Queue obtained\n");
 
-  // Configure m_surface
   WGPUSurfaceConfiguration config = {};
   config.device = m_device;
   config.format = m_surfaceFormat;
   config.usage = WGPUTextureUsage_RenderAttachment;
-  config.width = static_cast<uint32_t>(m_width);
-  config.height = static_cast<uint32_t>(m_height);
-  config.presentMode = WGPUPresentMode_Immediate; // Disable VSync for manual frame rate control
+  config.width = m_width;
+  config.height = m_height;
+  config.presentMode = WGPUPresentMode_Immediate;
   config.alphaMode = WGPUCompositeAlphaMode_Auto;
-
   wgpuSurfaceConfigure(m_surface, &config);
-  fprintf(stderr, "[DEBUG] Surface configured\n");
-  
-  // Initialize TextureManager
-  fprintf(stderr, "[DEBUG] Initializing TextureManager...\n");
-  TextureManager::getInstance().initialize(m_device, m_queue);
-  fprintf(stderr, "[DEBUG] TextureManager initialized\n");
-  
-  fprintf(stderr, "[DEBUG] WebGPU initialization complete\n");
 
+  TextureManager::getInstance().initialize(m_device, m_queue);
   return true;
 }
 
-/**
- * @brief Initializes Dear ImGui with GLFW and WebGPU backends.
- *
- * This method:
- * - Creates the ImGui context
- * - Configures ImGui I/O settings (keyboard and gamepad navigation)
- * - Sets the dark color theme
- * - Initializes the GLFW platform backend
- * - Initializes the WebGPU renderer backend with appropriate m_surface format
- *
- * @return true if initialization succeeds, false otherwise
- */
 bool Application::initImGui() {
-  fprintf(stderr, "[DEBUG] Initializing ImGui...\n");
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-
   ImGui::StyleColorsDark();
-
   ImGui_ImplGlfw_InitForOther(m_window, true);
-
   ImGui_ImplWGPU_InitInfo init_info = {};
   init_info.Device = m_device;
   init_info.NumFramesInFlight = 3;
   init_info.RenderTargetFormat = m_surfaceFormat;
   init_info.DepthStencilFormat = WGPUTextureFormat_Undefined;
-
   ImGui_ImplWGPU_Init(&init_info);
-  fprintf(stderr, "[DEBUG] ImGui initialized\n");
-
   return true;
 }
 
-/**
- * @brief Initializes all application subsystems in order.
- *
- * Calls initialization methods in the required sequence:
- * 1. GLFW (windowing)
- * 2. WebGPU (graphics m_device)
- * 3. ImGui (user interface)
- *
- * If any initialization step fails, the method returns immediately.
- *
- * @return true if all subsystems initialize successfully, false otherwise
- */
 bool Application::initialize() {
-  if (!initGLFW())
-    return false;
-  if (!initWebGPU())
-    return false;
-  if (!initImGui())
-    return false;
+  if (!initGLFW()) return false;
+  if (!initWebGPU()) return false;
+  if (!initImGui()) return false;
   return true;
 }
 
-/**
- * @brief Executes one iteration of the main rendering loop.
- *
- * This method performs a complete frame rendering cycle:
- * 1. Polls GLFW events (keyboard, mouse, window events)
- * 2. Starts a new ImGui frame
- * 3. Renders ImGui UI elements (currently just the demo window)
- * 4. Acquires the current m_surface texture for rendering
- * 5. Creates a render pass with clear color
- * 6. Records ImGui draw commands into the render pass
- * 7. Submits the command buffer to the GPU m_queue
- * 8. Presents the rendered frame to the screen
- * 9. Releases temporary GPU resources
- *
- * This method should be called repeatedly in the main application loop.
- */
-void Application::mainLoop() {
-  // Frame rate limiting
-  double currentTime = glfwGetTime();
-  double deltaTime = currentTime - m_lastFrameTime;
+void Application::terminate() {
+  TextureManager::getInstance().cleanup();
+  terminateImGui();
+  terminateWebGPU();
+  terminateGLFW();
+}
+
+void Application::terminateImGui() {
+  ImGui_ImplWGPU_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
+}
+
+void Application::terminateWebGPU() {
+  if (m_queue) wgpuQueueRelease(m_queue);
+  if (m_device) wgpuDeviceRelease(m_device);
+  if (m_adapter) wgpuAdapterRelease(m_adapter);
+  if (m_surface) wgpuSurfaceRelease(m_surface);
+  if (m_instance) wgpuInstanceRelease(m_instance);
+}
+
+void Application::terminateGLFW() {
+  if (m_window) glfwDestroyWindow(m_window);
+  glfwTerminate();
+}
+
+bool Application::isRunning() {
+  return m_window && !glfwWindowShouldClose(m_window);
+}
+
+void Application::onResize(int newWidth, int newHeight) {
+  if (newWidth <= 0 || newHeight <= 0) return;
+  m_width = newWidth;
+  m_height = newHeight;
+  if (m_surface && m_device) {
+    WGPUSurfaceConfiguration config = {};
+    config.device = m_device;
+    config.format = m_surfaceFormat;
+    config.usage = WGPUTextureUsage_RenderAttachment;
+    config.width = m_width;
+    config.height = m_height;
+    config.presentMode = WGPUPresentMode_Immediate;
+    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    wgpuSurfaceConfigure(m_surface, &config);
+  }
+}
+
+void Application::refreshAvailableModels() {
+    m_availableModels = m_simulator.getAvailableModels();
+    
+    // Sync selected index with current loaded model
+    std::string current = m_simulator.getCurrentModelName();
+    m_selectedModelIndex = -1;
+    for(size_t i=0; i<m_availableModels.size(); ++i) {
+        if(m_availableModels[i].name == current) {
+            m_selectedModelIndex = (int)i;
+            break;
+        }
+    }
+}
+
+void Application::onModelChanged() {
+    refreshAvailableModels(); // Sync dropdown
+    const auto* desc = m_simulator.getCurrentModelDescriptor();
+    if (!desc) return;
+    
+    m_uiParamValues.assign(desc->param_values, desc->param_values + desc->num_params);
+    m_uiSettingValues.assign(desc->setting_values, desc->setting_values + desc->num_settings);
+    
+    // Cache inputs
+    m_inputIdxWheelAngle = -1;
+    m_inputIdxWheelRate = -1;
+    m_inputIdxAx = -1;
+    for(size_t i=0; i<desc->num_inputs; ++i) {
+        std::string name = desc->input_names[i];
+        if (name == "steering_wheel_angle_input") m_inputIdxWheelAngle = (int)i;
+        else if (name == "steering_wheel_rate_input") m_inputIdxWheelRate = (int)i;
+        else if (name == "ax" || name == "ax_input") m_inputIdxAx = (int)i;
+    }
+    
+    // Cache states
+    m_stateIdxX = -1; m_stateIdxY = -1; m_stateIdxYaw = -1; m_stateIdxV = -1;
+    m_stateIdxAx = -1; m_stateIdxSteerWheelAngle = -1; m_stateIdxSteerWheelRate = -1;
+    
+    for(size_t i=0; i<desc->num_states; ++i) {
+        std::string name = desc->state_names[i];
+        if (name == "x") m_stateIdxX = (int)i;
+        else if (name == "y") m_stateIdxY = (int)i;
+        else if (name == "yaw") m_stateIdxYaw = (int)i;
+        else if (name == "v") m_stateIdxV = (int)i;
+        else if (name == "ax") m_stateIdxAx = (int)i;
+        else if (name == "steering_wheel_angle") m_stateIdxSteerWheelAngle = (int)i;
+        else if (name == "steering_wheel_rate") m_stateIdxSteerWheelRate = (int)i;
+    }
+    
+    // Cache params
+    m_paramIdxWheelbase = -1;
+    m_paramIdxTrackWidth = -1;
+    for(size_t i=0; i<desc->num_params; ++i) {
+        std::string name = desc->param_names[i];
+        if (name == "wheelbase") m_paramIdxWheelbase = (int)i;
+        else if (name == "track_width") m_paramIdxTrackWidth = (int)i;
+    }
+
+    // Cache steering mode setting index
+    m_settingIdxSteeringMode = -1;
+    for(size_t i=0; i<desc->num_settings; ++i) {
+        std::string name = desc->setting_names[i];
+        if (name == "steering_input_mode") {
+            m_settingIdxSteeringMode = (int)i;
+            break;
+        }
+    }
+}
+
+void Application::handleInput() {
+  if (m_simulator.checkAndClearModelChanged()) {
+      onModelChanged();
+  }
+
+  if (m_selectedModelIndex == -1 && !m_availableModels.empty()) {
+      onModelChanged();
+  }
+
+  const scene::Scene& scene = m_sceneDB.snapshot();
+  ViewportPanel::RenderState renderState;
+  if (m_stateIdxX >= 0 && (size_t)m_stateIdxX < scene.car_state_values.size()) renderState.x = scene.car_state_values[m_stateIdxX];
+  if (m_stateIdxY >= 0 && (size_t)m_stateIdxY < scene.car_state_values.size()) renderState.y = scene.car_state_values[m_stateIdxY];
   
-  if (deltaTime < m_targetFrameTime) {
-    // Sleep for the remaining time to reach target FPS
-    double sleepTime = m_targetFrameTime - deltaTime;
-    std::this_thread::sleep_for(std::chrono::duration<double>(sleepTime));
-    currentTime = glfwGetTime();
+  m_viewportPanel.handleInput(m_window, renderState);
+
+  static bool pauseKeyWasPressed = false;
+  bool pauseKeyPressed = glfwGetKey(m_window, gKeyBindings.pauseSimulation) == GLFW_PRESS;
+  if (pauseKeyPressed && !pauseKeyWasPressed) {
+    if (m_simulator.isPaused()) m_simulator.resume();
+    else m_simulator.pause();
+  }
+  pauseKeyWasPressed = pauseKeyPressed;
+
+  static bool resetKeyWasPressed = false;
+  bool resetKeyPressed = glfwGetKey(m_window, gKeyBindings.resetSimulation) == GLFW_PRESS;
+  if (resetKeyPressed && !resetKeyWasPressed) {
+    m_simulator.reset();
+  }
+  resetKeyWasPressed = resetKeyPressed;
+
+  if (!m_simulator.isCommEnabled()) {
+    const auto* desc = m_simulator.getCurrentModelDescriptor();
+        if (desc) {
+        std::vector<double> input(desc->num_inputs, 0.0);
+        
+        bool keyW = glfwGetKey(m_window, gKeyBindings.carAccelerate) == GLFW_PRESS;
+        bool keyS = glfwGetKey(m_window, gKeyBindings.carBrake) == GLFW_PRESS;
+        bool keyA = glfwGetKey(m_window, gKeyBindings.carSteerLeft) == GLFW_PRESS;
+        bool keyD = glfwGetKey(m_window, gKeyBindings.carSteerRight) == GLFW_PRESS;
+        
+        bool steeringRateMode = false;
+        if (m_settingIdxSteeringMode >= 0 && desc->setting_values) {
+            steeringRateMode = desc->setting_values[m_settingIdxSteeringMode] == 1;
+        }
+        
+        if (m_inputIdxAx >= 0) {
+            double maxAx = desc->input_max[m_inputIdxAx];
+            double minAx = desc->input_min[m_inputIdxAx];
+            if (keyW) input[m_inputIdxAx] = maxAx;
+            else if (keyS) input[m_inputIdxAx] = minAx;
+        }
+        
+        if (steeringRateMode) {
+            if (m_inputIdxWheelRate >= 0) {
+                double maxRate = desc->input_max[m_inputIdxWheelRate];
+                double minRate = desc->input_min[m_inputIdxWheelRate];
+                if (keyA) input[m_inputIdxWheelRate] = maxRate;
+                else if (keyD) input[m_inputIdxWheelRate] = minRate;
+            }
+        } else {
+            if (m_inputIdxWheelAngle >= 0) {
+                double maxAngle = desc->input_max[m_inputIdxWheelAngle];
+                double minAngle = desc->input_min[m_inputIdxWheelAngle];
+                if (keyA) input[m_inputIdxWheelAngle] = maxAngle;
+                else if (keyD) input[m_inputIdxWheelAngle] = minAngle;
+            }
+        }
+        
+        m_simulator.setInput(input);
+    }
+  }
+}
+
+void Application::setupPanels() {
+  m_leftPanel.addSection("Simulated Objects", [this]() {
+    ImGui::Checkbox("Car", &m_showCar);
+    ImGui::Checkbox("Cones", &m_showCones);
+  });
+  
+  m_leftPanel.addSection("Markers", [this]() { });
+  
+  m_rightPanel.addSection("Model Selection", [this]() {
+      std::string currentName = "None";
+      if (m_selectedModelIndex >= 0 && m_selectedModelIndex < (int)m_availableModels.size()) {
+          currentName = m_availableModels[m_selectedModelIndex].name;
+      } else {
+          // If no selection but sim has model, show it
+          std::string simModel = m_simulator.getCurrentModelName();
+          if (!simModel.empty()) currentName = simModel;
+      }
+
+      if (ImGui::BeginCombo("Model", currentName.c_str())) {
+          for (int i = 0; i < (int)m_availableModels.size(); ++i) {
+              bool isSelected = (m_selectedModelIndex == i);
+              if (ImGui::Selectable(m_availableModels[i].name.c_str(), isSelected)) {
+                  m_selectedModelIndex = i;
+                  if (m_simulator.loadModel(m_availableModels[i].path)) {
+                      onModelChanged();
+                  }
+              }
+              if (isSelected) ImGui::SetItemDefaultFocus();
+          }
+          ImGui::EndCombo();
+      }
+      
+      if (ImGui::Button("Refresh Models")) {
+          refreshAvailableModels();
+      }
+  });
+
+  m_rightPanel.addSection("Parameters", [this]() {
+      const auto* desc = m_simulator.getCurrentModelDescriptor();
+      if (!desc) return;
+      
+      if (m_simulator.checkAndClearModelChanged()) {
+          onModelChanged();
+      }
+      
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+      
+      for (size_t i=0; i<desc->num_params; ++i) {
+          if (m_uiParamValues.size() <= i) break; 
+          double v = m_uiParamValues[i];
+          double min = desc->param_min[i];
+          double max = desc->param_max[i];
+          const char* name = desc->param_names[i];
+          
+          ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+          ImGui::BeginChild((std::string("##param_") + name).c_str(), ImVec2(0, 50), true);
+          ImGui::Text("%s", name);
+          ImGui::SetNextItemWidth(-1);
+          
+          if (ImGui::InputDouble((std::string("##input_") + name).c_str(), &v, 0.0, 0.0, "%.3f")) {
+              v = std::clamp(v, min, max);
+              m_uiParamValues[i] = v;
+              m_simulator.setParam(i, v);
+          }
+          ImGui::EndChild();
+          ImGui::PopStyleColor();
+      }
+      
+      ImGui::PopStyleVar();
+  });
+  
+  m_rightPanel.addSection("Settings", [this]() {
+      const auto* desc = m_simulator.getCurrentModelDescriptor();
+      if (!desc) return;
+      
+      for (size_t i=0; i<desc->num_settings; ++i) {
+          if (m_uiSettingValues.size() <= i) break;
+          int v = m_uiSettingValues[i];
+          const char* name = desc->setting_names[i];
+          
+          std::vector<const char*> options;
+          for(size_t k=0; k<desc->num_setting_options; ++k) {
+              if (desc->setting_option_setting_index[k] == (int32_t)i) {
+                  options.push_back(desc->setting_option_names[k]);
+              }
+          }
+          
+          if (!options.empty()) {
+              ImGui::SetNextItemWidth(-1);
+              if (ImGui::Combo(name, &v, options.data(), (int)options.size())) {
+                  m_uiSettingValues[i] = v;
+                  m_simulator.setSetting(i, v);
+              }
+          }
+      }
+  });
+
+  m_rightPanel.addSection("Simulation Control", [this]() {
+    bool isPaused = m_simulator.isPaused();
+    
+    if (isPaused) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.6f, 0.0f, 1.0f));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));
+    }
+    
+    if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(-1, 30))) {
+      if (isPaused) m_simulator.resume();
+      else m_simulator.pause();
+    }
+    
+    ImGui::PopStyleColor();
+    
+    ImGui::Text("Step size (N):");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputInt("##StepN", &m_stepN, 0, 0); 
+    m_stepN = std::max(1, m_stepN);
+
+    float buttonWidth = ImGui::GetContentRegionAvail().x / 2.0f - 4.0f;
+    if (ImGui::Button("Step N", ImVec2(buttonWidth, 30))) {
+      m_simulator.pause();
+      m_simulator.step((uint64_t)m_stepN);
+      m_simulator.resume();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Step 1", ImVec2(-1, 30))) {
+      m_simulator.pause();
+      m_simulator.step(1);
+      m_simulator.resume();
+    }
+
+    if (ImGui::Button("Reset", ImVec2(-1, 30))) {
+      m_simulator.reset();
+    }
+  });
+  
+  m_rightPanel.addSection("Track Loading", [this]() {
+      ImGui::Text("Track Directory:");
+      ImGui::SetNextItemWidth(-80);
+      ImGui::InputText("##trackdir", m_trackDirBuffer, sizeof(m_trackDirBuffer));
+      ImGui::SameLine();
+      if (ImGui::Button("Browse...")) {
+          // File dialog logic
+      }
+      
+      ImGui::Text("Tracks:");
+      ImGui::BeginChild("##tracklist", ImVec2(0, 150), true);
+      for(size_t i=0; i<m_availableTracks.size(); ++i) {
+          bool isSelected = (m_selectedTrackIndex == (int)i);
+          if(ImGui::Selectable(m_availableTracks[i].c_str(), isSelected, ImGuiSelectableFlags_AllowDoubleClick)) {
+              m_selectedTrackIndex = (int)i;
+              if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                  std::string filepath = std::string(m_trackDirBuffer) + "/" + m_availableTracks[i] + ".csv";
+                  scene::TrackData trackData;
+                  if (scene::TrackLoader::loadFromCSV(filepath, trackData)) {
+                      m_simulator.setCones(trackData.cones);
+                      if(trackData.startPose.has_value()) {
+                          m_simulator.setStartPose(trackData.startPose.value());
+                      }
+                  }
+              }
+          }
+      }
+      ImGui::EndChild();
+      
+      if (ImGui::Button("Load Selected Track", ImVec2(-1, 30))) {
+          if (m_selectedTrackIndex >= 0 && m_selectedTrackIndex < (int)m_availableTracks.size()) {
+              std::string filepath = std::string(m_trackDirBuffer) + "/" + m_availableTracks[m_selectedTrackIndex] + ".csv";
+              scene::TrackData trackData;
+              if (scene::TrackLoader::loadFromCSV(filepath, trackData)) {
+                  m_simulator.setCones(trackData.cones);
+                  if(trackData.startPose.has_value()) {
+                      m_simulator.setStartPose(trackData.startPose.value());
+                  }
+              }
+          }
+      }
+  });
+  
+  m_rightPanel.addSection("Status", [this]() {
+      const scene::Scene& scene = m_sceneDB.snapshot();
+      uint64_t tick = m_sceneDB.tick.load();
+      double simTime = tick * m_simulator.getDt();
+      ImGui::Text("Tick: %lu", (unsigned long)tick);
+      ImGui::Text("Sim Time: %.3f s", simTime);
+      
+      if (m_stateIdxX >= 0 && m_stateIdxY >= 0 && (size_t)m_stateIdxY < scene.car_state_values.size()) {
+          double x = scene.car_state_values[m_stateIdxX];
+          double y = scene.car_state_values[m_stateIdxY];
+          ImGui::Text("Pos: (%.2f, %.2f)", x, y);
+      }
+      if (m_stateIdxV >= 0 && (size_t)m_stateIdxV < scene.car_state_values.size()) {
+          ImGui::Text("V: %.2f m/s", scene.car_state_values[m_stateIdxV]);
+      }
+  });
+}
+
+void Application::render2D() {
+  const scene::Scene& scene = m_sceneDB.snapshot();
+  
+  m_leftPanel.draw(m_width, m_height);
+  m_rightPanel.draw(m_width, m_height);
+  
+  ViewportPanel::RenderState rs;
+  const auto* desc = m_simulator.getCurrentModelDescriptor();
+  
+  if (desc && !scene.car_state_values.empty()) {
+      if (m_stateIdxX >= 0 && (size_t)m_stateIdxX < scene.car_state_values.size()) rs.x = scene.car_state_values[m_stateIdxX];
+      if (m_stateIdxY >= 0 && (size_t)m_stateIdxY < scene.car_state_values.size()) rs.y = scene.car_state_values[m_stateIdxY];
+      if (m_stateIdxYaw >= 0 && (size_t)m_stateIdxYaw < scene.car_state_values.size()) rs.yaw = scene.car_state_values[m_stateIdxYaw];
+      if (m_stateIdxV >= 0 && (size_t)m_stateIdxV < scene.car_state_values.size()) rs.v = scene.car_state_values[m_stateIdxV];
+      
+      if (m_paramIdxWheelbase >= 0 && (size_t)m_paramIdxWheelbase < m_uiParamValues.size()) {
+          rs.wheelbase = m_uiParamValues[m_paramIdxWheelbase];
+      }
+      if (m_paramIdxTrackWidth >= 0 && (size_t)m_paramIdxTrackWidth < m_uiParamValues.size()) {
+          rs.track_width = m_uiParamValues[m_paramIdxTrackWidth];
+      }
+      
+      if (m_stateIdxAx >= 0 && (size_t)m_stateIdxAx < scene.car_state_values.size()) {
+          rs.ax = scene.car_state_values[m_stateIdxAx];
+      }
+      
+      if (m_stateIdxSteerWheelAngle >= 0 && (size_t)m_stateIdxSteerWheelAngle < scene.car_state_values.size()) {
+          rs.steering_wheel_angle = scene.car_state_values[m_stateIdxSteerWheelAngle];
+      }
+      
+      if (m_stateIdxSteerWheelRate >= 0 && (size_t)m_stateIdxSteerWheelRate < scene.car_state_values.size()) {
+          rs.steering_wheel_rate = scene.car_state_values[m_stateIdxSteerWheelRate];
+      }
   }
   
+  rs.cones = &scene.cones;
+  
+  float leftW = m_leftPanel.getWidth();
+  float rightW = m_rightPanel.getWidth();
+  m_viewportPanel.draw(leftW, 0, m_width - leftW - rightW, m_height, rs);
+}
+
+void Application::scanTrackDirectory() {
+  m_availableTracks.clear();
+  namespace fs = std::filesystem;
+  try {
+    if (fs::exists(m_trackDirBuffer) && fs::is_directory(m_trackDirBuffer)) {
+      for (const auto& entry : fs::directory_iterator(m_trackDirBuffer)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".csv") {
+          m_availableTracks.push_back(entry.path().stem().string());
+        }
+      }
+      std::sort(m_availableTracks.begin(), m_availableTracks.end());
+    }
+  } catch (...) {}
+}
+
+void Application::mainLoop() {
+  double currentTime = glfwGetTime();
+  double deltaTime = currentTime - m_lastFrameTime;
+  if (deltaTime < m_targetFrameTime) {
+    std::this_thread::sleep_for(std::chrono::duration<double>(m_targetFrameTime - deltaTime));
+    currentTime = glfwGetTime();
+  }
   m_lastFrameTime = currentTime;
 
   glfwPollEvents();
   handleInput();
 
-  // Probe sync client connection every 200ms (for UI status indicator)
-  // if (m_simulator.isCommEnabled() && m_simulator.isSyncMode()) {
-  //   auto now = std::chrono::steady_clock::now();
-  //   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-  //     now - m_lastConnectionProbe).count();
-    
-  //   if (elapsed >= 200) {
-  //     m_simulator.probeConnection();
-  //     m_lastConnectionProbe = now;
-  //   }
-  // }
-
-  // Get current texture from m_surface BEFORE starting ImGui frame
   WGPUSurfaceTexture m_surfaceTexture = {};
   wgpuSurfaceGetCurrentTexture(m_surface, &m_surfaceTexture);
 
-  // Handle special m_surface states
-  if (m_surfaceTexture.status == WGPUSurfaceGetCurrentTextureStatus_Timeout
-      || m_surfaceTexture.status == WGPUSurfaceGetCurrentTextureStatus_Outdated
-      || m_surfaceTexture.status == WGPUSurfaceGetCurrentTextureStatus_Lost) {
-    // Surface needs reconfiguration (probably due to resize)
-    if (m_surfaceTexture.texture) {
-      wgpuTextureRelease(m_surfaceTexture.texture);
-    }
-
-    // Get current framebuffer size and reconfigure
-    int fbWidth, fbHeight;
-    glfwGetFramebufferSize(m_window, &fbWidth, &fbHeight);
-    if (fbWidth > 0 && fbHeight > 0) {
-      onResize(fbWidth, fbHeight);
-    }
-    return; // Skip this frame
+  if (m_surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal && 
+      m_surfaceTexture.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
+      if (m_surfaceTexture.texture) wgpuTextureRelease(m_surfaceTexture.texture);
+      return; 
   }
 
-  // Start ImGui frame (only after surface is confirmed valid)
   ImGui_ImplWGPU_NewFrame();
   ImGui_ImplGlfw_NewFrame();
-  
-  // CRITICAL FIX: Override ImGui's display size to match actual surface dimensions
-  // This prevents scissor rect validation errors during rapid window resizing
   ImGuiIO& io = ImGui::GetIO();
   io.DisplaySize = ImVec2((float)m_width, (float)m_height);
-  
   ImGui::NewFrame();
 
-  // Render 2D scene
   render2D();
 
-  // Render ImGui
   ImGui::Render();
 
-  if (m_surfaceTexture.status
-        != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal
-      && m_surfaceTexture.status
-           != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
-    fprintf(stderr, "Failed to get current m_surface texture: status %d\n",
-            m_surfaceTexture.status);
-    return;
-  }
-
-  // Create texture view
   WGPUTextureViewDescriptor viewDesc = {};
   viewDesc.format = m_surfaceFormat;
   viewDesc.dimension = WGPUTextureViewDimension_2D;
@@ -523,883 +666,34 @@ void Application::mainLoop() {
   viewDesc.baseArrayLayer = 0;
   viewDesc.arrayLayerCount = 1;
   viewDesc.aspect = WGPUTextureAspect_All;
+  WGPUTextureView backbuffer = wgpuTextureCreateView(m_surfaceTexture.texture, &viewDesc);
 
-  WGPUTextureView backbuffer =
-    wgpuTextureCreateView(m_surfaceTexture.texture, &viewDesc);
-
-  // Create render pass
   WGPURenderPassColorAttachment colorAttachment = {};
   colorAttachment.view = backbuffer;
   colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
   colorAttachment.loadOp = WGPULoadOp_Clear;
   colorAttachment.storeOp = WGPUStoreOp_Store;
-  colorAttachment.clearValue = {
-    m_clearColor[0] * m_clearColor[3], m_clearColor[1] * m_clearColor[3],
-    m_clearColor[2] * m_clearColor[3], m_clearColor[3]};
+  colorAttachment.clearValue = {m_clearColor[0], m_clearColor[1], m_clearColor[2], m_clearColor[3]};
 
   WGPURenderPassDescriptor renderPassDesc = {};
   renderPassDesc.colorAttachmentCount = 1;
   renderPassDesc.colorAttachments = &colorAttachment;
-  renderPassDesc.depthStencilAttachment = nullptr;
 
-  // Create command encoder
   WGPUCommandEncoderDescriptor encoderDesc = {};
-  encoderDesc.label = WGPU_STR("Main Encoder");
-  WGPUCommandEncoder encoder =
-    wgpuDeviceCreateCommandEncoder(m_device, &encoderDesc);
-
-  // Begin render pass
-  WGPURenderPassEncoder pass =
-    wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
-
-  // Render ImGui draw data
+  WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(m_device, &encoderDesc);
+  WGPURenderPassEncoder pass = wgpuCommandEncoderBeginRenderPass(encoder, &renderPassDesc);
   ImGui_ImplWGPU_RenderDrawData(ImGui::GetDrawData(), pass);
-
-  // End render pass
   wgpuRenderPassEncoderEnd(pass);
   wgpuRenderPassEncoderRelease(pass);
 
-  // Submit commands
   WGPUCommandBufferDescriptor cmdBufferDesc = {};
-  cmdBufferDesc.label = WGPU_STR("Main Command Buffer");
-  WGPUCommandBuffer cmdBuffer =
-    wgpuCommandEncoderFinish(encoder, &cmdBufferDesc);
+  WGPUCommandBuffer cmdBuffer = wgpuCommandEncoderFinish(encoder, &cmdBufferDesc);
   wgpuCommandEncoderRelease(encoder);
-
   wgpuQueueSubmit(m_queue, 1, &cmdBuffer);
   wgpuCommandBufferRelease(cmdBuffer);
-
-  // Present
   wgpuSurfacePresent(m_surface);
-
-  // Release resources
   wgpuTextureViewRelease(backbuffer);
   wgpuTextureRelease(m_surfaceTexture.texture);
-}
-
-/**
- * @brief Checks if the application should continue running.
- *
- * @return true if the window exists and hasn't been closed by the user, false
- * otherwise
- */
-bool Application::isRunning() {
-  return m_window && !glfwWindowShouldClose(m_window);
-}
-
-/**
- * @brief Shuts down ImGui and its backends.
- *
- * Cleans up ImGui resources in the correct order:
- * 1. WebGPU backend
- * 2. GLFW backend
- * 3. ImGui context
- */
-void Application::terminateImGui() {
-  ImGui_ImplWGPU_Shutdown();
-  ImGui_ImplGlfw_Shutdown();
-  ImGui::DestroyContext();
-}
-
-/**
- * @brief Releases all WebGPU resources.
- *
- * Releases WebGPU handles in reverse order of creation:
- * 1. Queue
- * 2. Device
- * 3. Adapter
- * 4. Surface
- * 5. Instance
- *
- * Each resource is checked for validity before release to allow safe
- * partial cleanup if initialization failed midway.
- */
-void Application::terminateWebGPU() {
-  if (m_queue)
-    wgpuQueueRelease(m_queue);
-  if (m_device)
-    wgpuDeviceRelease(m_device);
-  if (m_adapter)
-    wgpuAdapterRelease(m_adapter);
-  if (m_surface)
-    wgpuSurfaceRelease(m_surface);
-  if (m_instance)
-    wgpuInstanceRelease(m_instance);
-}
-
-/**
- * @brief Destroys the GLFW window and terminates GLFW.
- *
- * Cleans up GLFW resources:
- * 1. Destroys the window if it exists
- * 2. Terminates the GLFW library
- */
-void Application::terminateGLFW() {
-  if (m_window) {
-    glfwDestroyWindow(m_window);
-    m_window = nullptr;
-  }
-  glfwTerminate();
-}
-
-/**
- * @brief Terminates all application subsystems in reverse order.
- *
- * Calls termination methods in reverse initialization order:
- * 1. ImGui (user interface)
- * 2. WebGPU (graphics m_device)
- * 3. GLFW (windowing)
- *
- * This ensures proper cleanup of all resources.
- */
-void Application::terminate() {
-  TextureManager::getInstance().cleanup();
-  terminateImGui();
-  terminateWebGPU();
-  terminateGLFW();
-}
-
-/**
- * @brief Handles window resize events by reconfiguring the WebGPU m_surface.
- *
- * This method is called when the window framebuffer size changes. It updates
- * the internal width/height and reconfigures the WebGPU m_surface to match
- * the new dimensions.
- *
- * @param newWidth New framebuffer width in pixels
- * @param newHeight New framebuffer height in pixels
- */
-void Application::onResize(int newWidth, int newHeight) {
-  if (newWidth <= 0 || newHeight <= 0) {
-    // Ignore invalid sizes (minimized window)
-    return;
-  }
-
-  fprintf(stderr, "[DEBUG] Window resized to %dx%d\n", newWidth, newHeight);
-
-  m_width = newWidth;
-  m_height = newHeight;
-
-  // Reconfigure the m_surface with new dimensions
-  if (m_surface && m_device) {
-    WGPUSurfaceConfiguration config = {};
-    config.device = m_device;
-    config.format = m_surfaceFormat;
-    config.usage = WGPUTextureUsage_RenderAttachment;
-    config.width = static_cast<uint32_t>(m_width);
-    config.height = static_cast<uint32_t>(m_height);
-    config.presentMode = WGPUPresentMode_Immediate; // Disable VSync for manual frame rate control
-    config.alphaMode = WGPUCompositeAlphaMode_Auto;
-
-    wgpuSurfaceConfigure(m_surface, &config);
-    fprintf(stderr, "[DEBUG] Surface reconfigured\n");
-  }
-}
-
-/**
- * @brief Handles keyboard and mouse input.
- *
- * Keyboard:
- * - WASD: Car control
- * - Spacebar: Toggle camera mode
- *
- * Mouse:
- * - Left drag: Pan free camera
- * - Scroll: Zoom (handled in callback)
- */
-void Application::handleInput() {
-  // Handle viewport panel input (camera controls)
-  m_viewportPanel.handleInput(m_window);
-
-  // Pause/Resume simulation
-  static bool pauseKeyWasPressed = false;
-  bool pauseKeyPressed = glfwGetKey(m_window, gKeyBindings.pauseSimulation) == GLFW_PRESS;
-  if (pauseKeyPressed && !pauseKeyWasPressed) {
-    if (m_simulator.isPaused()) {
-      m_simulator.resume();
-    } else {
-      m_simulator.pause();
-    }
-  }
-  pauseKeyWasPressed = pauseKeyPressed;
-
-  // Reset simulation
-  static bool resetKeyWasPressed = false;
-  bool resetKeyPressed = glfwGetKey(m_window, gKeyBindings.resetSimulation) == GLFW_PRESS;
-  if (resetKeyPressed && !resetKeyWasPressed) {
-    m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiAxMax, m_uiSteerRateMax, 
-                     m_uiDeltaMax, m_uiSteeringMode, m_uiDt);
-  }
-  resetKeyWasPressed = resetKeyPressed;
-
-  // Only allow WASD control when ZMQ is disabled
-  if (!m_simulator.isCommEnabled()) {
-    // Update key states for car control using keybindings
-    m_keyW = glfwGetKey(m_window, gKeyBindings.carAccelerate) == GLFW_PRESS;
-    m_keyS = glfwGetKey(m_window, gKeyBindings.carBrake) == GLFW_PRESS;
-    m_keyA = glfwGetKey(m_window, gKeyBindings.carSteerLeft) == GLFW_PRESS;
-    m_keyD = glfwGetKey(m_window, gKeyBindings.carSteerRight) == GLFW_PRESS;
-
-    // Construct control input
-    scene::CarInput input{};
-
-    // Acceleration:
-    const double accel = m_uiAxMax;
-    if (m_keyW)
-      input.ax = accel;
-    else if (m_keyS)
-      input.ax = -accel;
-    else
-      input.ax = 0.0;
-
-    // Steering: depends on mode
-    const scene::Scene& scene = m_sceneDB.snapshot();
-    if (scene.steering_mode == scene::SteeringMode::Rate) {
-      // Steering rate mode: A/D sets rate
-      const double steer_rate = m_uiSteerRateMax;  // rad/s
-      if (m_keyA)
-        input.delta_dot = steer_rate;   // Positive rate = steer left
-      else if (m_keyD)
-        input.delta_dot = -steer_rate;  // Negative rate = steer right
-      else
-        input.delta_dot = 0.0;
-    } else {
-      // Steering angle mode: A/D sets angle directly
-      const double steer_angle = 0.5;  // rad
-      if (m_keyA)
-        input.delta = steer_angle;
-      else if (m_keyD)
-        input.delta = -steer_angle;
-      else
-        input.delta = 0.0;
-    }
-
-    // Send to simulator
-    m_simulator.setInput(input);
-  }
-}
-
-/**
- * @brief Sets up panel sections with their drawing functions.
- *
- * This is called once during construction to define what each panel contains.
- */
-void Application::setupPanels() {
-  // === Display Panel (Left) ===
-  
-  // Simulated Objects section
-  m_leftPanel.addSection("Simulated Objects", [this]() {
-    ImGui::Checkbox("Car", &m_showCar);
-    ImGui::Checkbox("Cones", &m_showCones);
-  });
-  
-  // Markers section
-  m_leftPanel.addSection("Markers", [this]() {
-    std::vector<std::string> namespaces = m_markerSystem.getNamespaces();
-    
-    if (namespaces.empty()) {
-      ImGui::TextDisabled("No markers");
-      return;
-    }
-    
-    for (const std::string& ns : namespaces) {
-      // Namespace header with visibility checkbox
-      bool nsVisible = m_markerSystem.isNamespaceVisible(ns);
-      if (ImGui::Checkbox(("##ns_" + ns).c_str(), &nsVisible)) {
-        m_markerSystem.setNamespaceVisible(ns, nsVisible);
-      }
-      ImGui::SameLine();
-      
-      // Collapsible tree node for namespace
-      ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_DefaultOpen;
-      if (ImGui::TreeNodeEx(ns.c_str(), flags)) {
-        // Show individual markers
-        std::vector<int> ids = m_markerSystem.getMarkerIds(ns);
-        for (int id : ids) {
-          ImGui::Indent(20.0f);
-          bool markerVisible = m_markerSystem.isMarkerVisible(ns, id);
-          std::string label = "ID " + std::to_string(id);
-          if (ImGui::Checkbox(label.c_str(), &markerVisible)) {
-            m_markerSystem.setMarkerVisible(ns, id, markerVisible);
-          }
-          ImGui::Unindent(20.0f);
-        }
-        ImGui::TreePop();
-      }
-    }
-  });
-  
-  // === Admin Panel (Right) ===
-  
-  // Simulation Control section
-  m_rightPanel.addSection("Simulation Control", [this]() {
-    bool isPaused = m_simulator.isPaused();
-    bool commEnabled = m_simulator.isCommEnabled();
-    bool syncMode = m_simulator.isSyncMode();
-    bool syncClientConnected = m_simulator.isSyncClientConnected();
-    
-    // Color the button: Green when paused (Resume), Red when running (Pause)
-    if (isPaused) {
-      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.6f, 0.0f, 1.0f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.0f, 0.8f, 0.0f, 1.0f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.0f, 0.5f, 0.0f, 1.0f));
-    } else {
-      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.0f, 0.0f, 1.0f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
-      ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.0f, 0.0f, 1.0f));
-    }
-    
-    // Always allow Resume - let simulator detect reconnection
-    // (No longer disable Resume when client is disconnected in sync mode)
-    if (ImGui::Button(isPaused ? "Resume" : "Pause", ImVec2(-1, 30))) {
-      if (isPaused) {
-        m_simulator.resume();
-      } else {
-        m_simulator.pause();
-      }
-    }
-    
-    ImGui::PopStyleColor(3);
-
-    
-    // Step controls: text + input on line 1, buttons on line 2
-    ImGui::AlignTextToFramePadding();  // Align text vertically with InputInt
-    ImGui::Text("Step size (N):");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(-1);
-    ImGui::InputInt("##StepN", &m_stepN, 0, 0); 
-    m_stepN = std::max(1, m_stepN);
-
-    // Two buttons filling the width
-    float buttonWidth = ImGui::GetContentRegionAvail().x / 2.0f - 4.0f;
-    if (ImGui::Button("Step N", ImVec2(buttonWidth, 30))) {
-      m_simulator.pause();
-      m_simulator.step((uint64_t)m_stepN);
-      m_simulator.resume();
-    }
-
-    ImGui::SameLine();
-    if (ImGui::Button("Step 1", ImVec2(-1, 30))) {
-      m_simulator.pause();
-      m_simulator.step(1);
-      m_simulator.resume();
-    }
-
-    // Reset button
-    if (ImGui::Button("Reset", ImVec2(-1, 30))) {
-      m_simulator.reset(m_uiWheelbase, m_uiVMax, m_uiAxMax, m_uiSteerRateMax,
-                       m_uiDeltaMax, m_uiSteeringMode, m_uiDt);
-    }
-  });
-
-  // Communication section
-  m_rightPanel.addSection("Communication", [this]() {
-    bool commEnabled = m_simulator.isCommEnabled();
-    bool syncMode = m_simulator.isSyncMode();
-    bool syncClientConnected = m_simulator.isSyncClientConnected();
-    
-    // Enable/Disable toggle
-    if (ImGui::Checkbox("Enable ZMQ", &commEnabled)) {
-      m_simulator.setCommEnable(commEnabled);
-    }
-    
-    ImGui::Separator();
-    ImGui::TextDisabled("Socket Status:");
-    
-    if (commEnabled) {
-      float activeOpacity = 1.0f;
-      float inactiveOpacity = 0.3f;
-      float circleRadius = 5.0f;
-      
-      // Helper lambda to draw status circle
-      auto drawStatusCircle = [circleRadius](ImVec4 color) {
-        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-        ImVec2 circleCenter = ImVec2(cursorPos.x + circleRadius, cursorPos.y + ImGui::GetTextLineHeight() * 0.5f);
-        ImGui::GetWindowDrawList()->AddCircleFilled(circleCenter, circleRadius, ImGui::ColorConvertFloat4ToU32(color));
-        ImGui::Dummy(ImVec2(circleRadius * 2.0f, 0));
-      };
-      
-      // State publisher - always active when enabled
-      drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
-      ImGui::SameLine();
-      ImGui::Text("State (5556): Publishing");
-      
-      // Async control socket (5559)
-      if (!syncMode) {
-        drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
-        ImGui::SameLine();
-        ImGui::Text("Control Async (5559): Listening");
-      } else {
-        drawStatusCircle(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity));
-        ImGui::SameLine();
-        ImGui::TextDisabled("Control Async (5559): Inactive");
-      }
-      
-      // Sync control socket (5557)
-      if (syncMode) {
-        if (syncClientConnected) {
-          drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
-          ImGui::SameLine();
-          ImGui::Text("Control Sync (5557): Connected");
-        } else {
-          drawStatusCircle(ImVec4(1.0f, 0.0f, 0.0f, activeOpacity));
-          ImGui::SameLine();
-          ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Control Sync (5557): NO CLIENT");
-        }
-      } else {
-        drawStatusCircle(ImVec4(0.5f, 0.5f, 0.5f, inactiveOpacity));
-        ImGui::SameLine();
-        ImGui::TextDisabled("Control Sync (5557): Inactive");
-      }
-      
-      // Admin socket - always listening
-      drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
-      ImGui::SameLine();
-      ImGui::Text("Admin (5558): Listening");
-      
-      // Markers
-      drawStatusCircle(ImVec4(0.0f, 1.0f, 0.0f, activeOpacity));
-      ImGui::SameLine();
-      ImGui::Text("Markers (5560): Listening");
-    } else {
-      float circleRadius = 5.0f;
-      ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-      ImVec2 circleCenter = ImVec2(cursorPos.x + circleRadius, cursorPos.y + ImGui::GetTextLineHeight() * 0.5f);
-      ImGui::GetWindowDrawList()->AddCircleFilled(circleCenter, circleRadius, ImGui::ColorConvertFloat4ToU32(ImVec4(0.5f, 0.5f, 0.5f, 1.0f)));
-      ImGui::Dummy(ImVec2(circleRadius * 2.0f, 0));
-      ImGui::SameLine();
-      ImGui::TextDisabled("All sockets: Disabled");
-    }
-    
-    ImGui::Separator();
-    
-    // Mode selection (grayed out if not enabled, async selected when disabled)
-    ImGui::BeginDisabled(!commEnabled);
-    if (ImGui::RadioButton("Asynchronous", !syncMode || !commEnabled)) {
-      if (commEnabled) {
-        m_simulator.setSyncMode(false);
-      }
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Synchronous", syncMode && commEnabled)) {
-      if (commEnabled) {
-        m_simulator.setSyncMode(true);
-      }
-    }
-    ImGui::EndDisabled();
-    
-    // Control period (only for sync mode)
-    if (syncMode && commEnabled) {
-      ImGui::Spacing();
-      ImGui::Text("Control period (ms):");
-      int controlPeriodMs = static_cast<int>(m_simulator.getControlPeriodMs());
-      ImGui::SetNextItemWidth(-1);
-      if (ImGui::InputInt("##control_period_ms", &controlPeriodMs, 10, 100)) {
-        controlPeriodMs = std::max(10, controlPeriodMs);
-        m_simulator.setControlPeriodMs(static_cast<uint32_t>(controlPeriodMs));
-        // Update control tick period
-        double dt = m_simulator.getDt();
-        uint32_t ticks = static_cast<uint32_t>(std::max(1.0, controlPeriodMs / (dt * 1000.0)));
-        // Note: tick period will be computed by simulator on next update
-      }
-      ImGui::TextDisabled("Milliseconds between requests");
-    }
-  });
-
-  // Parameters section
-  m_rightPanel.addSection("Parameters", [this]() {
-    // Sync UI parameters from simulator only if they were updated externally (via ZMQ)
-    if (m_simulator.checkAndClearParamsUpdatedExternally()) {
-      m_uiWheelbase = static_cast<float>(m_simulator.getWheelbase());
-      m_uiVMax = static_cast<float>(m_simulator.getVMax());
-      m_uiAxMax = static_cast<float>(m_simulator.getAxMax());
-      m_uiSteerRateMax = static_cast<float>(m_simulator.getSteerRateMax());
-      m_uiDeltaMax = static_cast<float>(m_simulator.getDeltaMax());
-      m_uiSteeringMode = m_simulator.getSteeringMode();
-      m_uiDt = static_cast<float>(m_simulator.getDt());
-    }
-    
-    ImGui::Text("Apply on reset:");
-    ImGui::Spacing();
-    
-    // Reduce padding for all parameter rows
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
-
-    // Wheelbase
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::BeginChild("##wheelbase_param", ImVec2(0, 50), true);
-    ImGui::Text("Wheelbase (m)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##wheelbase", &m_uiWheelbase, 0.1f, 1.0f, "%.2f")) {
-      m_uiWheelbase = std::max(0.1f, m_uiWheelbase);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    // Max Velocity
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##vmax_param", ImVec2(0, 50), true);
-    ImGui::Text("Max Velocity (m/s)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##vmax", &m_uiVMax, 1.0f, 5.0f, "%.1f")) {
-      m_uiVMax = std::max(0.1f, m_uiVMax);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    // Max Acceleration
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##axmax_param", ImVec2(0, 50), true);
-    ImGui::Text("Max Acceleration (m/s^2)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##axmax", &m_uiAxMax, 1.0f, 5.0f, "%.1f")) {
-      m_uiAxMax = std::max(0.1f, m_uiAxMax);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    // Max Steering Angle
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::BeginChild("##deltamax_param", ImVec2(0, 50), true);
-    ImGui::Text("Max Steering Angle (rad)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##deltamax", &m_uiDeltaMax, 0.1f, 0.5f, "%.3f")) {
-      m_uiDeltaMax = std::max(0.01f, m_uiDeltaMax);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    // Max Steering Rate
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##steerratemax_param", ImVec2(0, 50), true);
-    ImGui::Text("Max Steering Rate (rad/s)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##steerratemax", &m_uiSteerRateMax, 0.5f, 1.0f, "%.2f")) {
-      m_uiSteerRateMax = std::max(0.1f, m_uiSteerRateMax);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-
-    // Timestep
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##dt_param", ImVec2(0, 50), true);
-    ImGui::Text("Timestep (s)");
-    ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputFloat("##dt", &m_uiDt, 0.001f, 0.01f, "%.4f")) {
-      m_uiDt = std::clamp(m_uiDt, 0.0001f, 0.1f);
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    // Steering Input Mode
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::BeginChild("##steering_mode_param", ImVec2(0, 50), true);
-    ImGui::Text("Steering Input Mode:");
-    if (ImGui::RadioButton("Angle", m_uiSteeringMode == scene::SteeringMode::Angle)) {
-      m_uiSteeringMode = scene::SteeringMode::Angle;
-    }
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Rate", m_uiSteeringMode == scene::SteeringMode::Rate)) {
-      m_uiSteeringMode = scene::SteeringMode::Rate;
-    }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-    
-    // Pop the reduced padding style
-    ImGui::PopStyleVar();
-
-    ImGui::Separator();
-    ImGui::Text("Track Loading:");
-    ImGui::Spacing();
-
-    // Track directory input with Browse button
-    ImGui::Text("Track Directory:");
-    ImGui::SetNextItemWidth(-80);
-    if (ImGui::InputText("##trackdir", m_trackDirBuffer,
-                         sizeof(m_trackDirBuffer))) {
-      scanTrackDirectory();
-    }
-    
-    ImGui::SameLine();
-    if (ImGui::Button("Browse...", ImVec2(70, 0))) {
-      IGFD::FileDialogConfig config;
-      config.path = m_trackDirBuffer;
-      config.flags = ImGuiFileDialogFlags_Modal;
-      ImGuiFileDialog::Instance()->OpenDialog("ChooseDirDlgKey", "Choose Directory", 
-                                               nullptr, config);
-    }
-
-    // Display file dialog
-    if (ImGuiFileDialog::Instance()->Display("ChooseDirDlgKey", 
-                                              ImGuiWindowFlags_NoCollapse, 
-                                              ImVec2(600, 400))) {
-      if (ImGuiFileDialog::Instance()->IsOk()) {
-        std::string selectedPath = ImGuiFileDialog::Instance()->GetCurrentPath();
-        snprintf(m_trackDirBuffer, sizeof(m_trackDirBuffer), "%s", selectedPath.c_str());
-        scanTrackDirectory();
-      }
-      ImGuiFileDialog::Instance()->Close();
-    }
-
-    ImGui::Spacing();
-    ImGui::Text("Available Tracks:");
-
-    // Track list with alternating colors
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
-    ImGui::BeginChild("##tracklist", ImVec2(0, 150), true);
-
-    if (m_availableTracks.empty()) {
-      ImGui::TextDisabled("No tracks found");
-    } else {
-      for (size_t i = 0; i < m_availableTracks.size(); ++i) {
-        // Alternating row colors
-        ImVec4 rowColor = (i % 2 == 0) ? ImVec4(0.18f, 0.18f, 0.20f, 1.0f)
-                                       : ImVec4(0.15f, 0.15f, 0.17f, 1.0f);
-
-        ImGui::PushStyleColor(ImGuiCol_Header, rowColor);
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
-                              ImVec4(0.25f, 0.25f, 0.30f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderActive,
-                              ImVec4(0.30f, 0.40f, 0.50f, 1.0f));
-
-        bool isSelected = (m_selectedTrackIndex == static_cast<int>(i));
-        if (ImGui::Selectable(m_availableTracks[i].c_str(), isSelected,
-                              ImGuiSelectableFlags_AllowDoubleClick,
-                              ImVec2(0, 20))) {
-          m_selectedTrackIndex = static_cast<int>(i);
-
-          // Load track on double-click
-          if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-            std::string filepath = std::string(m_trackDirBuffer) + "/" +
-                                   m_availableTracks[i] + ".csv";
-            scene::TrackData trackData;
-            if (scene::TrackLoader::loadFromCSV(filepath, trackData)) {
-              m_simulator.setCones(trackData.cones);
-              if (trackData.startPose.has_value()) {
-                m_simulator.setStartPose(trackData.startPose.value());
-              }
-              
-              // Add midline marker if midpoints are available
-              // if (!trackData.midpoints.empty()) {
-              //   uint64_t tick = m_sceneDB.tick.load();
-              //   double simTime = tick * m_simulator.getDt();
-              //   Marker midlineMarker;
-              //   midlineMarker.type = MarkerType::LineStrip;
-              //   midlineMarker.points = trackData.midpoints;
-              //   midlineMarker.color = Color(255, 255, 0, 255); // Yellow
-              //   midlineMarker.scale = Scale2D(0.05f); // Line width
-              //   // No TTL - persists until replaced
-              //   m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
-              // }
-            }
-          }
-        }
-
-        ImGui::PopStyleColor(3);
-      }
-    }
-
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
-
-    // Load button
-    ImGui::Spacing();
-    if (ImGui::Button("Load Selected Track", ImVec2(-1, 30))) {
-      if (m_selectedTrackIndex >= 0 &&
-          m_selectedTrackIndex < static_cast<int>(m_availableTracks.size())) {
-        std::string filepath = std::string(m_trackDirBuffer) + "/" +
-                               m_availableTracks[m_selectedTrackIndex] + ".csv";
-        scene::TrackData trackData;
-        if (scene::TrackLoader::loadFromCSV(filepath, trackData)) {
-          m_simulator.setCones(trackData.cones);
-          if (trackData.startPose.has_value()) {
-            m_simulator.setStartPose(trackData.startPose.value());
-          }
-          
-          // Add midline marker if midpoints are available
-          // if (!trackData.midpoints.empty()) {
-          //   uint64_t tick = m_sceneDB.tick.load();
-          //   double simTime = tick * m_simulator.getDt();
-          //   Marker midlineMarker;
-          //   midlineMarker.type = MarkerType::LineStrip;
-          //   midlineMarker.points = trackData.midpoints;
-          //   midlineMarker.color = Color(255, 255, 0, 255); // Yellow
-          //   midlineMarker.scale = Scale2D(0.05f); // Line width
-          //   // No TTL - persists until replaced
-          //   m_markerSystem.addMarker("Midline", 0, midlineMarker, simTime);
-          // }
-        }
-      }
-    }
-  });
-
-  // Status section
-  m_rightPanel.addSection("Status", [this]() {
-    const scene::Scene& scene = m_sceneDB.snapshot();
-    const scene::CarState& car = scene.car;
-
-    uint64_t tick = m_sceneDB.tick.load();
-    double simTime = tick * m_simulator.getDt();
-    ImGui::Text("Tick: %lu", (unsigned long)tick);
-    ImGui::Text("Sim Time: %.3f s", simTime);
-    ImGui::Text("Velocity: %.2f m/s", car.v);
-    ImGui::Text("Position: (%.1f, %.1f)", car.x(), car.y());
-    ImGui::Text("Yaw: %.1f deg", car.yaw() * 180.0 / M_PI);
-    
-    // Communication status
-    if (m_simulator.isCommEnabled()) {
-      ImGui::Separator();
-      ImGui::Text("Communication:");
-      ImGui::Text("  Mode: %s", m_simulator.isSyncMode() ? "Synchronous" : "Asynchronous");
-      if (m_simulator.isSyncMode()) {
-        ImGui::Text("  Control period ticks: %u", m_simulator.getControlPeriodTicks());
-        ImGui::Text("  Client: %s", 
-                    m_simulator.isSyncClientConnected() ? "Connected" : "Disconnected");
-      }
-    }
-    
-    ImGui::Separator();
-    ImGui::Text("Camera: %s",
-                m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free
-                  ? "Free"
-                  : "Car Follow");
-    if (m_viewportPanel.cameraMode == ViewportPanel::CameraMode::Free) {
-      ImGui::Text("Zoom: %.1f px/m", m_viewportPanel.freeCameraZoom);
-      ImGui::Text("Pos: (%.1f, %.1f)", m_viewportPanel.freeCameraX,
-                  m_viewportPanel.freeCameraY);
-    } else {
-      ImGui::Text("Zoom: %.1f px/m", m_viewportPanel.followCarZoom);
-    }
-
-    ImGui::Separator();
-    ImGui::Text("Controls:");
-    if (m_simulator.isCommEnabled()) {
-      ImGui::BulletText("WASD: Disabled (ZMQ enabled)");
-    } else {
-      ImGui::BulletText("WASD: Drive car");
-    }
-    ImGui::BulletText("Space: Toggle camera");
-    ImGui::BulletText("Mouse drag: Pan (free mode)");
-    ImGui::BulletText("Scroll: Zoom");
-  });
-}
-
-/**
- * @brief Renders the 2D simulation scene and panels.
- */
-void Application::render2D() {
-  // Poll for markers and commands from ZMQ (if subscriber is active)
-  if (m_markerSub && m_markerSub->isRunning()) {
-    uint64_t tick = m_sceneDB.tick.load();
-    double simTime = tick * m_simulator.getDt();
-    
-    // Poll all pending messages until none remain
-    while (true) {
-      auto result = m_markerSub->poll();
-      
-      if (result.type == comm::MarkerSubscriber::MessageType::None) {
-        break;  // No more messages
-      }
-      
-      if (result.type == comm::MarkerSubscriber::MessageType::MarkerArray) {
-        // Process marker array
-        for (const auto& protoMarker : result.marker_array->markers()) {
-        Marker marker;
-        
-        // Copy proto marker to internal marker (enums are now the same)
-        marker.type = protoMarker.type();
-        marker.pose = common::SE2(protoMarker.pose().x(), 
-                                   protoMarker.pose().y(), 
-                                   protoMarker.pose().yaw());
-        marker.color = Color(static_cast<uint8_t>(protoMarker.color().r()), 
-                            static_cast<uint8_t>(protoMarker.color().g()), 
-                            static_cast<uint8_t>(protoMarker.color().b()), 
-                            static_cast<uint8_t>(protoMarker.color().a()));
-        marker.scale = Scale2D(protoMarker.scale().x(), protoMarker.scale().y());
-        marker.text = protoMarker.text();
-        marker.visible = protoMarker.visible();
-        marker.frame_id = protoMarker.frame_id();
-        
-        // Convert points (now using Vec2 instead of Pose)
-        for (const auto& pt : protoMarker.points()) {
-          marker.points.emplace_back(pt.x(), pt.y());
-        }
-        
-        // Convert colors
-        for (const auto& c : protoMarker.colors()) {
-          marker.colors.emplace_back(static_cast<uint8_t>(c.r()), 
-                                     static_cast<uint8_t>(c.g()), 
-                                     static_cast<uint8_t>(c.b()), 
-                                     static_cast<uint8_t>(c.a()));
-        }
-        
-        // Set TTL
-        if (protoMarker.ttl_sec() > 0.0) {
-          marker.ttl_sec = protoMarker.ttl_sec();
-        }
-        
-        m_markerSystem.addMarker(protoMarker.ns(), protoMarker.id(), marker, simTime);
-        }
-      } else if (result.type == comm::MarkerSubscriber::MessageType::MarkerCommand) {
-        // Process marker command
-        switch (result.marker_command->type()) {
-          case lilsim::MarkerCommandType::DELETE_MARKER:
-            m_markerSystem.deleteMarker(result.marker_command->ns(), result.marker_command->id());
-            break;
-          case lilsim::MarkerCommandType::DELETE_NAMESPACE:
-            m_markerSystem.deleteNamespace(result.marker_command->ns());
-            break;
-          case lilsim::MarkerCommandType::CLEAR_ALL:
-            m_markerSystem.clearAll();
-            break;
-          default:
-            break;
-        }
-      }
-    }
-  }
-
-  // Update marker system (handle TTL)
-  uint64_t tick = m_sceneDB.tick.load();
-  double simTime = tick * m_simulator.getDt();
-  m_markerSystem.update(simTime);
-  
-  // Draw left panel (Display)
-  m_leftPanel.draw(m_width, m_height);
-  
-  // Draw right panel (Admin)
-  m_rightPanel.draw(m_width, m_height);
-
-  // Draw viewport (fill remaining space between panels)
-  float leftPanelWidth = m_leftPanel.getWidth();
-  float rightPanelWidth = m_rightPanel.getWidth();
-  m_viewportPanel.draw(leftPanelWidth, 0, 
-                       (float)m_width - leftPanelWidth - rightPanelWidth, 
-                       (float)m_height);
-}
-
-/**
- * @brief Scans the track directory for CSV files.
- */
-void Application::scanTrackDirectory() {
-  m_availableTracks.clear();
-  m_selectedTrackIndex = -1;
-
-  namespace fs = std::filesystem;
-  try {
-    if (fs::exists(m_trackDirBuffer) && fs::is_directory(m_trackDirBuffer)) {
-      for (const auto& entry : fs::directory_iterator(m_trackDirBuffer)) {
-        if (entry.is_regular_file() && entry.path().extension() == ".csv") {
-          std::string stem = entry.path().stem().string();
-          m_availableTracks.push_back(stem);
-        }
-      }
-      std::sort(m_availableTracks.begin(), m_availableTracks.end());
-    }
-  } catch (...) {
-    // Ignore errors
-  }
 }
 
 } // namespace viz

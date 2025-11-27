@@ -1,19 +1,163 @@
+### MVP TODO
+- [x] Generic car modeling over C ABI
+	- [x] Parameters, inputs and states 
+		- [x] wheelbase and track width obligatory parameters
+		- [x] Car pose (x, y, yaw), front_right_wheel_angle and front_left_wheel_angle obligatory states
+	- [x] base.h and macro header
+	- [x] Easy for user to define new car models (plugin system)
+- [x] GUI updates
+    - [x] Dynamic model loading
+    - [x] Dynamic parameters and settings panel
+- Car visuals updated
+	- 8 png's required
+		- Chassis (drawn under wheels)
+		- Chassis skin/overlay (drawn on top of wheels)
+			- Exact same pixel dimensions as Chassis
+		- Wheel (used for both front wheels)
+			- wheel rotates around center of this png
+		- TSAL Green 
+			- Exact same pixel dimensions as Chassis
+			- transparent except for green pixels where TSAL is
+		- TSAL Red
+			- Exact same pixel dimensions as Chassis
+			- transparent except for red pixels where TSAL is
+		- ASSI Blue
+			- Exact same pixel dimensions as Chassis
+			- transparent except for blue pixels where ASSIs are
+		- ASSI Yellow
+			- Exact same pixel dimensions as Chassis
+			- transparent except for yellow pixels where ASSis are
+		- Wheel and axle centerpoints (could also be a config file, but pngs are nicer I think)
+			- Exact same pixel dimensions as Chassis
+			- transparent except for 3 pixels of pre-defined RGB color codes that show the center points of the two front wheels, and the center of the rear axle 
+			- The pixel at the center of the rear axle also marks the center of the local car coordinate system
+			- Along with this png and the wheelbase and track width parameters, the car can be faithfully rendered
+	- Front wheels actually turn based on state
+- Add car sprite marker
+	- Defined by obligatory car state variables (though wheel angle optional) and opacity
+- Viz module communication over ZeroMQ instead of shared memory
+	- Perhaps except the inputs (needs consideration)
+		- Mapping of inputs also needs to be set by settings in the GUI, since car models now don't have any obligatory input types
+- Clean up the repository and remove LiU and Rennteam specific skins
+	- Make a generic skin
+	- Make repo ready to show to others
+	- Updated README.md with simple instructions and added ROADMAP.md
+	- Remove obvious LLM code comments (embarrassing)
+	  
+**When these things are ready, along with any necessary updates to the Python SDK, the first release should happen, and it should be shown to Rennteam and LiU Formula Student. At that point, it's ready for control algorithm development through a Python notebook.**
+#### Roadmap
+- Sensor models
+	- Will be another type of state beside cone positions and car state
+	- Range and bearing sensor model
+		- Does not need generic modeling like the car, for now
+		- Just hard-wired parameters that mimic a generic LiDAR perception module
+			- Total FOV (H and V), scan speed, number of rings (5 for RS-M1), FOV per ring (overlap)
+		- 2D Pose defined in car-local coordinate system
+		- Provides timetamped cone measurements
+		- False negatives and false positives
+		- Future: more common false positives on simulated time keeping equipment
+	- Inertial sensor model
+		- Also no generic modeling needed
+		- Perhaps different levels - IMU, VRU, AHRS
+		- Noise parameters mostly
+	- Wheel speed sensors model
+		- Should be fairly simple
+		- Should be enough information in the obligatory states (x, y, yaw, front_right_wheel_angle and front_left_wheel_angle)
+		- Slip ratio ignored if no slip_ratio_* states are declared (* being front_left, rear_right etc.)
+		- Would need effective_tire_radius state in order to output a rotational speed
+	- For users that don't want to implement sensor fusion client-side, provide pre-fused sensor measurements as well
+		- noisy velocity (in x and y) as well as yaw-rate of the car's center point (rear axle center) --- just enough for a client-side velocity motion model 
+- Add tunable noise parameters for track parameters
+	- uncorrelated noise for cone placement
+	- noise for starting pose
+	- Future: correlated noise for one placement (like, skewed tracks)
 
--  **(Next phase, after MVP)**
-    -  Replace kinematic with dynamic bicycle + simple actuator dynamics
-    -  ZeroMQ + Protobuf IPC stub (state PUB, admin REQ/REP, control PUSH)
-    -  Python SDK (for Jupyter notebook client) with `step(n)` helper
+**At this point, the simulator is ready for SLAM software development**
 
-#### Later on some time in the future
- - **Determinism hooks**
-    -  Fixed time base (no wall-clock in physics)
-    -  RNG seeded by `(seed ^ tick)` (even if unused yet)
-    - Future: Per-tick state checksum (xxhash) for debugging determinism
--  **Logging**
-    -  Set it up with the tracy profiler 
-    -  Ring buffer of `(tick, control, state)`
-    -  ImGui button **Save CSV** (to `logs/` with timestamp filename)
-    - `spdlog` init + error console in ImGui
--  **Repo polish**
-    -  `clang-format` target; CI build (Linux + Windows at least)
-    -  `README` quickstart guide: vcpkg setup, configure, build, run`L`
+- ROS2 bridge
+	- Quite important for usability early on
+	- Example C++ node(s) for synchronous control usage
+- Visualization plug-ins
+	- For now, read ax, steering_wheel_angle (if available) and steering_wheel_rate (if available) to visualize the current viewport UI
+		- if not available for currently selected model, don't show the bars and steering wheel at all
+- Simulated timekeeping equipment
+	- Client application and GUI able to show laptimes, Accel/Skidpad times
+		- Also part of state published by Sim module --- providing tick and timestamp when touched by car sprite, can only be activated again after car has fully left the beam
+	- Generic left-right TK tripod pairs
+	- Need their own nice pixel art, a slightly see-through red laser line is shown between them
+- Marked 2D meshes as end-zones
+	- Boolean state if car is inside it with all 4 wheel center points
+	- Used to easily and automatically define success in driverless missions
+		- Helpul for headless simulation
+- Procedurally generated AutoX/Trackdrive tracks
+	- including timekeeping equipment (start/finish line defined)
+	- check that github python script, maybe it can be repurposed
+- TS and AS (and EBS?) states
+	- Initially just TS and AS and purely for visualization purposes, and states are simply set by inputs - no logic inside sim
+	- TSAL and ASSI Viz reacts to states
+	- States separate from car model, not part of dynamics so logically separated
+	- In the future 
+		- TSMS, ASMS, TS activate (outside button) and RES controls (STOP and GO) as user inputs --- TS and AS states are inferred from these inputs, with optional simulated delays 
+		- TS must be on and AS must be in Driving, otherwise car model inputs are ignored
+		- TS and AS states sent to client --- user software must react correctly to them
+		- Educational for ASRs
+- Cone physics
+	- Simple impulse 2D rigid body physics between circles and car (just a rectangle initially, or convex hull of Chassis sprite non-transparent pixels)
+		- Later, collisions between cones should be supported
+	- Constant friction coefficient for cones to make them slow down after being hit
+	- If resulting speed of cone being hit is over a certain constant threshold, make it fall over
+		- Png pixel art sprites of regular cones and fallen over cones (8 different direction options). Optionally a middle frame for falling to make animation smoother (but requires extra logic/state of cones) 
+	- Automatically register DOO (Down Or Out) cones for automatic calculation of penalty time
+	- Fallen over cones may or may not have different detection parameters for the simulated range-bearing sensors
+- Define track bounds for Skidpad (2025+ version) and Accel
+	- Automatically register OOB (Out Of Bounds) for automatic calculation of penalty time
+- Simulated AMI
+	- client selects mission and mission is shown in viewport in cool UI --- digital 14-segment alphanumeric or dot display
+	- selected mission becomes part of scene state or metadata
+- Add some better, more complicated car model plugins beyond the kinematic single-track
+	- Dynamic single-track
+	- Basic planar 4-wheel model
+	- Complicated 4-wheel model with roll and pitch, advanced dynamics
+		- It's okay if it cannot run in real-time
+- C++ SDK
+	- C++ version of Python SDK with ZeroMQ client
+	- Small example program that uses it
+- Viz without sim?
+	- Ability to set data source as an MCAP file, or set the connected client as the data source
+	- Ability to record simulation state/events into MCAP files automatically without clunky "rosbag record" terminal command required 
+	- It would mean expanding the use case to make RViz/Rerun/Foxglove also obsolete
+		- Would make lilsim the all-in-one
+	- Important: markers are not part of state, they should never be recorded
+		- Difference from ROS 2, where markers are topics just like everything else
+		- Maybe this would change in the future so they could also be recorded and increase compatibility with ROS 2
+		- I like that markers are more of an online thing, like regardless of it's showing recorded data or if it's live simulation data, you can "draw" on the viewport to show things. I don't really see markers as part of any state or an event
+		- Visualizations based on state or events should be written as plug-ins, not use markers
+
+#### Later on, some time in the future
+- **Profiling**
+    -  Set it up with the tracy profiler to see at least how fast the car model updates
+- **Repo polish**
+    - Proper `clang-tidy` setup that the code actually follows
+    - `clang-format` target; CI build (Linux + Windows at least, good if Mac OS included)
+    - `README` quickstart guide: vcpkg setup, configure, build, run
+- **Upgrade to 3D**
+	- Optionally render everything in 3D instead of the standard 2D viewport
+	- Simple PBR pipeline and ideally a nice 3D environment that doesn't look like trash (like CarMaker and CARLA does)
+		- More effort to make things look good, but perhaps that shouldn't be a priority
+		- Would require a mesh for the car and rigging based on hardpoints
+			- Not entirely trivial and plenty of car-specific work if making it look pretty would be a priority --- which it probably shouldn't be
+	- Allows driver-in-the loop with sim racing input hardware
+		- Perhaps even VR support, though that would require a new rendering back end
+			- OpenXR + Vulkan?
+	- Making a completely new project for this and basing it on Unity is a possibility
+		- Would make rendering and VR support easier, most likely
+		- Integration with current C++ code would likely be harder
+		- Would learn Unity instead of the lower level stuff
+	- A 3D scene would allow simulating raw LiDAR output based on ray-tracing
+		- This is the most valuable addition, I believe
+		- Requires a geometrically life-like scene with imperfections and competition-like environment
+		- Requires realistic simulation of LiDAR hardware --- noise in the right places and true-to-reality scanning behavior
+			- Ideally recorded point clouds from any LiDAR should be able to be used as input to a model generator that generates a realistic model of that LiDAR for use in simulation
+		- Since LiDAR simulation is the highest priority for 3D simulation, perhaps focus very little on nice-looking PBR, at least initially
+	- Good PBR would even allow simulating decent camera output
+		- Not nearly as valuable as point clouds though, and likely harder to get realistic

@@ -2,7 +2,7 @@
 
 #include "SE2.hpp"
 #include "Position.hpp"
-#include "comm/messages.pb.h"
+//#include "comm/messages.pb.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -11,7 +11,21 @@
 
 namespace viz {
 
-// Use protobuf enums directly
+namespace lilsim {
+  enum FrameId { WORLD = 0, CAR = 1 };
+  enum MarkerType { 
+      CIRCLE=0, 
+      RECTANGLE=1, 
+      TEXT=2, 
+      ARROW=3, 
+      LINE_STRIP=4, 
+      CIRCLE_LIST=5, 
+      TRIANGLE_LIST=6, 
+      MESH_2D=7 
+  };
+}
+
+// Use local enums instead of protobuf
 using FrameId = lilsim::FrameId;
 using MarkerType = lilsim::MarkerType;
 
@@ -174,4 +188,3 @@ private:
 };
 
 } // namespace viz
-
