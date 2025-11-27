@@ -152,6 +152,8 @@ add_subdirectory(scene)
 add_subdirectory(sim)
 add_subdirectory(viz)
 add_subdirectory(app)
+add_subdirectory(models/cars)
+
 
 # ---- Tests (optional) ----
 if(BUILD_TESTS)
