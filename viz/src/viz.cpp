@@ -900,7 +900,7 @@ void Application::setupPanels() {
     
     // Enable/Disable toggle
     if (ImGui::Checkbox("Enable ZMQ", &commEnabled)) {
-      m_simulator.enableComm(commEnabled);
+      m_simulator.setCommEnable(commEnabled);
     }
     
     ImGui::Separator();

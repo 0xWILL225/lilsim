@@ -64,7 +64,7 @@ public:
   }
 
   // Communication
-  void enableComm(bool enable);
+  void setCommEnable(bool enable);
   bool isCommEnabled() const {
     return m_commEnabled.load(std::memory_order_relaxed);
   }

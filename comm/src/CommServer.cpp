@@ -325,7 +325,7 @@ MarkerSubscriber::PollResult MarkerSubscriber::poll() {
         spdlog::error("[comm] Failed to parse MarkerCommand");
       }
     } else {
-      spdlog::warn("[comm] Unknown marker message topic: {}", topic);
+      // spdlog::warn("[comm] Unknown marker message topic: {}", topic);
     }
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] Error polling marker messages: {}", e.what());

@@ -38,12 +38,11 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 
 - The **single source of truth** for the simulation state.
 - Stores:
-    - Car state (dynamic bicycle model)
+    - Car state
     - Cone positions
-    - Transforms (frame tree)
-    - Optional future extensions (other vehicles, sensors, obstacles)
+    - Sensors
 - **Access pattern:**
-    - Simulator owns the write access.
+    - Simulator module owns the write access.
     - Other modules (Visualization, external clients) have read-only access.
 #### Implementation
 
@@ -52,14 +51,14 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
     Simulator writes to back, then atomically swaps pointers.  
     Readers always access the stable “front” snapshot.
     
-- **Result:** lock-free access; suitable for 1 kHz simulation vs 60 Hz visualization.
+- **Result:** lock-free access; suitable for 1 kHz simulation and 60 Hz visualization.
 
 ---
 
 ### 2. Simulator Module
 
 - Runs at a **fixed timestep (`dt`)** and updates the Scene.
-- Responsible for physics integration (dynamic bicycle model, noise models, sensors).
+- Responsible for physics integration (vehicle model, noise models, sensors).
 - Owns the Scene during simulation.
 - Supports two operating modes:
 
@@ -113,21 +112,6 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 
 - Scene graph with primitives, transforms, and composition.
 - Deferred until core simulator is stable.
-
----
-## Transforms and Frames
-- SE(2) transforms should generally be stored as 2D homogenous transform matrices `Eigen::Isometry2d`
-- Every simulated object holds an SE(2) transform
-- Every visualized marker holds an SE(2) transform and a frame id (frame id = name of parent marker or simulated object)
-- Visualization module maintains a lightweight **transform tree**:
-    - `add_transform(parent, child, T, stamp, static)`
-    - `resolve_to_world(frame, t, out T_world_frame)`
-- Tree anchored at `world` (or chosen world frame).
-- Supports both static and dynamic transforms.
-- On marker or sensor message reception:
-    - If frame known → immediately resolve to world.
-    - If unknown or outdated → reject and log (never silently disappear).
-- Optional interpolation/extrapolation for dynamic frames.
 ---
 ## Communication Model
 
@@ -139,7 +123,6 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
     - PUB/SUB for state updates and control requests.
     - PUSH/PULL or REQ/REP for controls and admin commands.
 - Lightweight, fast, and notebook-friendly.
-- In the future, gRPC may be added for externalized admin or cloud use.
 ---
 ## Jupyter Notebook Integration
 
@@ -173,9 +156,9 @@ The focus is on **determinism**, **debuggability**, and **ease of use** from a *
 ## Future Directions
 
 - Integrate real-time logging and replay.
-- Add more simulated sensors (IMU, lidar).
-- Support driver-in-the-loop experiments (single process shared memory).
-- Optional hierarchical scene representation (OpenUSD-inspired).
+- Support driver-in-the-loop experiments
+- Optional hierarchical scene representation (OpenUSD-inspired and compatible).
+- Bump up to optional 3D scene representation, dynamics and rendering.
 
 ---
 ## TL;DR

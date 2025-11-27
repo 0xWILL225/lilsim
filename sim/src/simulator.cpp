@@ -1,10 +1,11 @@
 #include <chrono>
 #include <cmath>
 
+#include <spdlog/spdlog.h>
+
 #include "simulator.hpp"
 #include "comm/CommServer.hpp"
 #include "TrackLoader.hpp"
-#include <spdlog/spdlog.h>
 
 namespace sim {
 
@@ -45,7 +46,7 @@ void Simulator::probeConnection() {
   }
 }
 
-void Simulator::enableComm(bool enable) {
+void Simulator::setCommEnable(bool enable) {
   if (enable && !m_commEnabled.load(std::memory_order_relaxed)) {
     // Start communication
     if (!m_commServer) {
@@ -121,7 +122,7 @@ void Simulator::loop() {
       m_startPose = m_newStartPose;
     }
     
-    // Check for input update request (from manual setInput)
+    // Check for input update request (from manual keyboard input setInput)
     if (m_inputUpdateRequested.exchange(false, std::memory_order_relaxed)) {
       // In Rate mode, preserve the integrated delta (steering angle state)
       // Only update the rate and acceleration inputs
@@ -142,6 +143,7 @@ void Simulator::loop() {
     }
     
     // Handle admin commands (if comm enabled)
+    // TODO: unify client message handling with GUI requests with inproc message handling from viz module
     if (m_commEnabled.load(std::memory_order_relaxed) && m_commServer) {
       auto adminCmd = m_commServer->pollAdminCommand();
       if (adminCmd.has_value()) {
@@ -248,7 +250,7 @@ void Simulator::loop() {
             break;
           }
 
-          case lilsim::AdminCommandType::INIT:
+          case lilsim::AdminCommandType::INIT: // TODO: This is never used (SET_PARAMS already covers this), remove along with message type.
             if (cmd.has_params()) {
               m_params.dt = cmd.params().dt();
               m_params.wheelbase = cmd.params().wheelbase();
