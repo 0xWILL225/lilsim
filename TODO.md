@@ -1,13 +1,14 @@
 ### MVP TODO
-- [x] Generic car modeling over C ABI
-	- [x] Parameters, inputs and states 
-		- [x] wheelbase and track width obligatory parameters
-		- [x] Car pose (x, y, yaw), front_right_wheel_angle and front_left_wheel_angle obligatory states
-	- [x] base.h and macro header
-	- [x] Easy for user to define new car models (plugin system)
-- [x] GUI updates
-    - [x] Dynamic model loading
-    - [x] Dynamic parameters and settings panel
+- Generic car modeling over C ABI
+	- Parameters, inputs and states 
+		- wheelbase and track width obligatory parameters, defined even if model plugin author doesn't register them 
+		- Car pose (x, y, yaw), front_right_wheel_angle and front_left_wheel_angle obligatory states, model plugin invalid without them
+			- These are required for visualization
+	- base.h and macro header
+	- Easy for user to define new car models
+	- YAML config files for specific vehicles - overwrites max, min and default values
+		- One for each season's car - without needing to recompile the model
+		- Loaded in from GUI or by connected client
 - Car visuals updated
 	- 8 png's required
 		- Chassis (drawn under wheels)
@@ -85,6 +86,8 @@
 		- Also part of state published by Sim module --- providing tick and timestamp when touched by car sprite, can only be activated again after car has fully left the beam
 	- Generic left-right TK tripod pairs
 	- Need their own nice pixel art, a slightly see-through red laser line is shown between them
+	- May necessitate addition of **Events** as part of the scene
+		- Events may also be useful for intermittent sensor readings
 - Marked 2D meshes as end-zones
 	- Boolean state if car is inside it with all 4 wheel center points
 	- Used to easily and automatically define success in driverless missions
@@ -119,10 +122,11 @@
 	- Basic planar 4-wheel model
 	- Complicated 4-wheel model with roll and pitch, advanced dynamics
 		- It's okay if it cannot run in real-time
+	- Input time jitter, not just delay
 - C++ SDK
 	- C++ version of Python SDK with ZeroMQ client
 	- Small example program that uses it
-- Viz without sim?
+- Viz without Sim
 	- Ability to set data source as an MCAP file, or set the connected client as the data source
 	- Ability to record simulation state/events into MCAP files automatically without clunky "rosbag record" terminal command required 
 	- It would mean expanding the use case to make RViz/Rerun/Foxglove also obsolete
@@ -132,6 +136,23 @@
 		- Maybe this would change in the future so they could also be recorded and increase compatibility with ROS 2
 		- I like that markers are more of an online thing, like regardless of it's showing recorded data or if it's live simulation data, you can "draw" on the viewport to show things. I don't really see markers as part of any state or an event
 		- Visualizations based on state or events should be written as plug-ins, not use markers
+	- Possibility to open a new window that shows timeline data for all inputs and states
+- Gaussian noise standard deviation parameters for...
+	- car model 
+		- parameters (std. dev. defined for each one separately)
+		- inputs?
+	- cone placement (same applied in x and y)
+		- regular uncorrelated to start with
+- Batched simulations, Sim without Viz (headless)
+	- Store data in MCAP for each simulation instance
+	- Add noise to parameters, cone placement, etc.
+	- Procedurally generated tracks that differ between runs
+		- probably better to sample from pre-generated data set
+	- Run each step as fast as possible, no need to simulate real passing of time
+	- Viewer for batched sim results
+		- Provide averaged metrics (success rate, average speed, etc.)
+		- Show list of all runs that can be sorted in order of several metrics, including DNF/Finish
+			- Can select specific run to be visualized (scrub back and forth)
 
 #### Later on, some time in the future
 - **Profiling**
@@ -140,6 +161,9 @@
     - Proper `clang-tidy` setup that the code actually follows
     - `clang-format` target; CI build (Linux + Windows at least, good if Mac OS included)
     - `README` quickstart guide: vcpkg setup, configure, build, run
+- **Debug console**
+	- Terminal inside the GUI that shows spdlog errors, warnings and info messages.
+	- Little icon in bottom bar that lights up with yellow triangle or red circle for warnings and errors respectively, much like IDEs do.
 - **Upgrade to 3D**
 	- Optionally render everything in 3D instead of the standard 2D viewport
 	- Simple PBR pipeline and ideally a nice 3D environment that doesn't look like trash (like CarMaker and CARLA does)
