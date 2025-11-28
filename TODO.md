@@ -1,8 +1,8 @@
-### MVP TODO
+#### MVP TODO
 - Generic car modeling over C ABI
 	- Parameters, inputs and states 
 		- wheelbase and track width obligatory parameters, defined even if model plugin author doesn't register them 
-		- Car pose (x, y, yaw), front_right_wheel_angle and front_left_wheel_angle obligatory states, model plugin invalid without them
+		- Car pose (x, y, yaw), wheel_fr_angle and wheel_fl_angle obligatory states, model plugin invalid without them
 			- These are required for visualization
 	- base.h and macro header
 	- Easy for user to define new car models
@@ -11,29 +11,37 @@
 		- Loaded in from GUI or by connected client
 - Car visuals updated
 	- 8 png's required
-		- Chassis (drawn under wheels)
-		- Chassis skin/overlay (drawn on top of wheels)
+		- Chassis (drawn under wheels) (chassis.png)
+			- Includes rear wheels visual, but not front wheels, only front suspension
+		- Chassis overlay (drawn on top of wheels) (overlay.png)
 			- Exact same pixel dimensions as Chassis
-		- Wheel (used for both front wheels)
-			- wheel rotates around center of this png
-		- TSAL Green 
+		- Wheel/tire (symmetric, used for both front wheels) (tire.png)
+			- wheel rotates around exact center of this png
+		- TSAL Green (tsal_green.png)
 			- Exact same pixel dimensions as Chassis
 			- transparent except for green pixels where TSAL is
-		- TSAL Red
+		- TSAL Red (tsal_red.png)
 			- Exact same pixel dimensions as Chassis
 			- transparent except for red pixels where TSAL is
-		- ASSI Blue
+		- ASSI Blue (assi_blue.png)
 			- Exact same pixel dimensions as Chassis
 			- transparent except for blue pixels where ASSIs are
-		- ASSI Yellow
+		- ASSI Yellow (assi_yellow.png)
 			- Exact same pixel dimensions as Chassis
 			- transparent except for yellow pixels where ASSis are
-		- Wheel and axle centerpoints (could also be a config file, but pngs are nicer I think)
+		- Wheel and axle centerpoints (points.png)
 			- Exact same pixel dimensions as Chassis
 			- transparent except for 3 pixels of pre-defined RGB color codes that show the center points of the two front wheels, and the center of the rear axle 
+				- Left front wheel rotation center: Red (255,0,0)
+				- Right front wheel rotation center: Green (0,255,0)
+				- Center of rear axle (origin): Blue (0,0,255)
 			- The pixel at the center of the rear axle also marks the center of the local car coordinate system
 			- Along with this png and the wheelbase and track width parameters, the car can be faithfully rendered
-	- Front wheels actually turn based on state
+				- wheelbase is measured as the vertical distance between the red pixel (front axle) and the blue pixel (rear axle)
+				- track width is measured as the horizontal distance between the red pixel (center front left wheel) and green pixel (center front right wheel)
+			- Importantly, the center of the pixels are used, not any of the pixels' edges
+				- particularly important for placing the tires on the front axle and rotating them right
+	- Front wheels actually turn based on state (wheel_fl_angle and wheel_fr_angle)
 - Add car sprite marker
 	- Defined by obligatory car state variables (though wheel angle optional) and opacity
 - Viz module communication over ZeroMQ instead of shared memory
@@ -42,7 +50,7 @@
 - Clean up the repository and remove LiU and Rennteam specific skins
 	- Make a generic skin
 	- Make repo ready to show to others
-	- Updated README.md with simple instructions and added ROADMAP.md
+	- Update README.md with simple instructions and add ROADMAP.md
 	- Remove obvious LLM code comments (embarrassing)
 	  
 **When these things are ready, along with any necessary updates to the Python SDK, the first release should happen, and it should be shown to Rennteam and LiU Formula Student. At that point, it's ready for control algorithm development through a Python notebook.**
@@ -63,7 +71,7 @@
 		- Noise parameters mostly
 	- Wheel speed sensors model
 		- Should be fairly simple
-		- Should be enough information in the obligatory states (x, y, yaw, front_right_wheel_angle and front_left_wheel_angle)
+		- Should be enough information in the obligatory states (x, y, yaw, wheel_fr_angle and wheel_fl_angle)
 		- Slip ratio ignored if no slip_ratio_* states are declared (* being front_left, rear_right etc.)
 		- Would need effective_tire_radius state in order to output a rotational speed
 	- For users that don't want to implement sensor fusion client-side, provide pre-fused sensor measurements as well
@@ -137,16 +145,13 @@
 		- I like that markers are more of an online thing, like regardless of it's showing recorded data or if it's live simulation data, you can "draw" on the viewport to show things. I don't really see markers as part of any state or an event
 		- Visualizations based on state or events should be written as plug-ins, not use markers
 	- Possibility to open a new window that shows timeline data for all inputs and states
-- Gaussian noise standard deviation parameters for...
-	- car model 
-		- parameters (std. dev. defined for each one separately)
-		- inputs?
-	- cone placement (same applied in x and y)
-		- regular uncorrelated to start with
+- Gaussian noise standard deviation parameters for car model 
+	- parameters (std. dev. defined for each one separately)
+	- Used to determine stability under model uncertainty
 - Batched simulations, Sim without Viz (headless)
 	- Store data in MCAP for each simulation instance
-	- Add noise to parameters, cone placement, etc.
-	- Procedurally generated tracks that differ between runs
+	- New sampling of noise to car parameters and cone placement for every instance
+	- Procedurally generated tracks that differ between runs (if AutoX and Trackdrive)
 		- probably better to sample from pre-generated data set
 	- Run each step as fast as possible, no need to simulate real passing of time
 	- Viewer for batched sim results

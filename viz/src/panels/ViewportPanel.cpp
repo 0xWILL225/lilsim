@@ -7,6 +7,8 @@
 #include <spdlog/spdlog.h>
 #include <cmath>
 #include <algorithm>
+#include <filesystem>
+#include "ImGuiFileDialog/stb/stb_image.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -154,40 +156,165 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
     }
   }
 
-  if (m_showCar && *m_showCar) {
-    auto& texMgr = TextureManager::getInstance();
-    const auto* texData = texMgr.getTexture("pixel_x2.png");
-    if (!texData) texData = texMgr.loadTexture("pixel_x2.png");
+  float cosCarYaw = std::cos(car_yaw);
+  float sinCarYaw = std::sin(car_yaw);
 
-    if (texData && texData->imguiTextureID) {
-      const float car_length = (float)state.wheelbase;
-      const float car_width = (float)state.track_width; // Approx
+  auto drawFallbackCar = [&]() {
+      auto& texMgr = TextureManager::getInstance();
+      const auto* texData = texMgr.getTexture("pixel_x2.png");
+      if (!texData) texData = texMgr.loadTexture("pixel_x2.png");
+      if (!texData || !texData->imguiTextureID) return;
+
+      float car_length = (float)state.wheelbase;
+      float car_width = (float)state.track_width;
       float sprite_half_length = car_length * 0.5f;
       float sprite_half_width = car_width * 0.5f;
-      
-      float cos_yaw = std::cos(car_yaw);
-      float sin_yaw = std::sin(car_yaw);
 
       float corners_local[4][2] = {
-        { sprite_half_length, -sprite_half_width},
-        { sprite_half_length,  sprite_half_width},
-        {-sprite_half_length,  sprite_half_width},
-        {-sprite_half_length, -sprite_half_width}
+          { sprite_half_length, -sprite_half_width},
+          { sprite_half_length,  sprite_half_width},
+          {-sprite_half_length,  sprite_half_width},
+          {-sprite_half_length, -sprite_half_width}
       };
 
       ImVec2 corners_screen[4];
       for (int i = 0; i < 4; ++i) {
-        float local_x = corners_local[i][0];
-        float local_y = corners_local[i][1];
-        float world_x = car_x + local_x * cos_yaw - local_y * sin_yaw;
-        float world_y = car_y + local_x * sin_yaw + local_y * cos_yaw;
-        corners_screen[i] = worldToScreen(world_x, world_y);
+          float local_x = corners_local[i][0];
+          float local_y = corners_local[i][1];
+          float world_x = car_x + local_x * cosCarYaw - local_y * sinCarYaw;
+          float world_y = car_y + local_x * sinCarYaw + local_y * cosCarYaw;
+          corners_screen[i] = worldToScreen(world_x, world_y);
       }
 
       draw_list->AddImageQuad(texData->imguiTextureID,
-        corners_screen[1], corners_screen[0], corners_screen[3], corners_screen[2],
-        ImVec2(0,0), ImVec2(1,0), ImVec2(1,1), ImVec2(0,1));
-    }
+                              corners_screen[1], corners_screen[0], corners_screen[3], corners_screen[2],
+                              ImVec2(0,0), ImVec2(1,0), ImVec2(1,1), ImVec2(0,1));
+  };
+
+  auto drawTexturedCar = [&]() -> bool {
+      if (!ensureCarVisualAssets()) {
+          return false;
+      }
+
+      const auto& car = m_carVisual;
+      if (!car.chassis || !car.overlay || !car.tire || !car.tsalRed) {
+          return false;
+      }
+
+      double wheelbaseNorm = (car.wheelbaseNorm > 1e-6) ? car.wheelbaseNorm : 1.0;
+      double trackWidthNorm = (car.trackWidthNorm > 1e-6) ? car.trackWidthNorm : 1.0;
+      double wheelbaseMeters = state.wheelbase > 1e-6 ? state.wheelbase : 1.0;
+      double trackWidthMeters = state.track_width > 1e-6 ? state.track_width : 1.0;
+
+      float scaleX = (float)(wheelbaseMeters / wheelbaseNorm);
+      float scaleY = (float)(trackWidthMeters / trackWidthNorm);
+
+      auto localToScreen = [&](float lx, float ly) -> ImVec2 {
+          float world_x = car_x + lx * cosCarYaw - ly * sinCarYaw;
+          float world_y = car_y + lx * sinCarYaw + ly * cosCarYaw;
+          return worldToScreen(world_x, world_y);
+      };
+
+      auto normalizedToLocal = [&](double nx, double ny) -> ImVec2 {
+          double dx = nx - car.blueXNorm;
+          double dy = car.blueYNorm - ny;
+          return ImVec2((float)(dy * scaleX), (float)(-dx * scaleY));
+      };
+
+      auto normalizedToScreen = [&](double nx, double ny) -> ImVec2 {
+          ImVec2 local = normalizedToLocal(nx, ny);
+          return localToScreen(local.x, local.y);
+      };
+
+      auto drawLayer = [&](const TextureManager::TextureData* tex,
+                           double left, double top, double right, double bottom) {
+          if (!tex || !tex->imguiTextureID) return;
+          double u0 = left;
+          double v0 = top;
+          double u1 = right;
+          double v1 = bottom;
+          constexpr double uvInset = 0.5;
+          if (tex->width > 0 && tex->height > 0) {
+              double du = uvInset / tex->width;
+              double dv = uvInset / tex->height;
+              u0 += du;
+              u1 -= du;
+              v0 += dv;
+              v1 -= dv;
+          }
+          ImVec2 tl = normalizedToScreen(left, top);
+          ImVec2 tr = normalizedToScreen(right, top);
+          ImVec2 br = normalizedToScreen(right, bottom);
+          ImVec2 bl = normalizedToScreen(left, bottom);
+          draw_list->AddImageQuad(tex->imguiTextureID, tr, tl, bl, br,
+                                  ImVec2((float)u1, (float)v0),
+                                  ImVec2((float)u0, (float)v0),
+                                  ImVec2((float)u0, (float)v1),
+                                  ImVec2((float)u1, (float)v1));
+      };
+
+      auto drawFullLayer = [&](const TextureManager::TextureData* tex) {
+          drawLayer(tex, 0.0, 0.0, 1.0, 1.0);
+      };
+
+      drawFullLayer(car.chassis);
+
+      double chassisWidth = std::max(car.baseWidth, 1);
+      double chassisHeight = std::max(car.baseHeight, 1);
+      double tireWidthNorm = (double)car.tireWidth / chassisWidth;
+      double tireHeightNorm = (double)car.tireHeight / chassisHeight;
+      float wheelHalfForward = (float)(0.5 * tireHeightNorm * scaleX);
+      float wheelHalfSide = (float)(0.5 * tireWidthNorm * scaleY);
+      constexpr float wheelInsetScale = 0.94f;
+      wheelHalfForward *= wheelInsetScale;
+      wheelHalfSide *= wheelInsetScale;
+
+      auto drawWheel = [&](const TextureManager::TextureData* tex,
+                           const ImVec2& center,
+                           double angle) {
+          if (!tex || !tex->imguiTextureID) return;
+          ImVec2 cornersLocal[4] = {
+              ImVec2( wheelHalfForward, -wheelHalfSide),
+              ImVec2( wheelHalfForward,  wheelHalfSide),
+              ImVec2(-wheelHalfForward,  wheelHalfSide),
+              ImVec2(-wheelHalfForward, -wheelHalfSide)
+          };
+          float cosA = std::cos((float)angle);
+          float sinA = std::sin((float)angle);
+          ImVec2 screen[4];
+          for (int i = 0; i < 4; ++i) {
+              float rx = cornersLocal[i].x * cosA - cornersLocal[i].y * sinA;
+              float ry = cornersLocal[i].x * sinA + cornersLocal[i].y * cosA;
+              screen[i] = localToScreen(center.x + rx, center.y + ry);
+          }
+          draw_list->AddImageQuad(tex->imguiTextureID,
+                                  screen[1], screen[0], screen[3], screen[2],
+                                  ImVec2(1,0), ImVec2(0,0), ImVec2(0,1), ImVec2(1,1));
+      };
+
+      ImVec2 frontLeftCenter = normalizedToLocal(car.redXNorm, car.redYNorm);
+      ImVec2 frontRightCenter = normalizedToLocal(car.greenXNorm, car.greenYNorm);
+      double fallbackAngle = state.steering_wheel_angle.value_or(0.0);
+      double frontLeftAngle = state.wheel_fl_angle.value_or(fallbackAngle);
+      double frontRightAngle = state.wheel_fr_angle.value_or(fallbackAngle);
+
+      drawWheel(car.tire, frontLeftCenter, frontLeftAngle);
+      drawWheel(car.tire, frontRightCenter, frontRightAngle);
+
+      drawFullLayer(car.overlay);
+
+      double phase = std::fmod(std::max(state.sim_time, 0.0), 1.0);
+      if (phase < 0.5) {
+          drawFullLayer(car.tsalRed);
+      }
+
+      return true;
+  };
+
+  if (m_showCar && *m_showCar) {
+      if (!drawTexturedCar()) {
+          drawFallbackCar();
+      }
   }
   
   // HUD
@@ -302,6 +429,102 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
 
   ImGui::End();
   ImGui::PopStyleVar();
+}
+
+bool ViewportPanel::ensureCarVisualAssets() {
+    if (m_carVisualLoaded) {
+        return true;
+    }
+
+    auto& texMgr = TextureManager::getInstance();
+    constexpr int kUpscale = 4;
+    const std::array<uint8_t,3> fillColor{10, 10, 10};
+    m_carVisual.chassis = texMgr.loadTexture("cars/x2/chassis.png", kUpscale, fillColor);
+    m_carVisual.overlay = texMgr.loadTexture("cars/x2/overlay.png", kUpscale, fillColor);
+    m_carVisual.tire = texMgr.loadTexture("cars/x2/tire.png", kUpscale, fillColor);
+    m_carVisual.tsalRed = texMgr.loadTexture("cars/x2/tsal_red.png", kUpscale, fillColor);
+
+    if (!m_carVisual.chassis || !m_carVisual.overlay ||
+        !m_carVisual.tire || !m_carVisual.tsalRed) {
+        spdlog::error("[ViewportPanel] Failed to load car sprite textures");
+        return false;
+    }
+
+    m_carVisual.baseWidth = m_carVisual.chassis->width;
+    m_carVisual.baseHeight = m_carVisual.chassis->height;
+    m_carVisual.tireWidth = m_carVisual.tire->width;
+    m_carVisual.tireHeight = m_carVisual.tire->height;
+
+    if (!loadReferencePoints("cars/x2/points.png")) {
+        return false;
+    }
+
+    m_carVisualLoaded = true;
+    return true;
+}
+
+bool ViewportPanel::loadReferencePoints(const std::string& assetPath) {
+    auto& texMgr = TextureManager::getInstance();
+    std::filesystem::path fullPath = texMgr.resolveAssetPath(assetPath);
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char* data = stbi_load(fullPath.string().c_str(), &width, &height, &channels, 4);
+    if (!data) {
+        spdlog::error("[ViewportPanel] Failed to load reference points image: {}", fullPath.string());
+        return false;
+    }
+
+    auto findColor = [&](unsigned char r, unsigned char g, unsigned char b, double& outX, double& outY) -> bool {
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                unsigned char* px = data + (y * width + x) * 4;
+                if (px[0] == r && px[1] == g && px[2] == b && px[3] > 0) {
+                    outX = (x + 0.5) / static_cast<double>(width);
+                    outY = (y + 0.5) / static_cast<double>(height);
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    double redX = 0.0, redY = 0.0;
+    double greenX = 0.0, greenY = 0.0;
+    double blueX = 0.0, blueY = 0.0;
+
+    bool foundRed = findColor(255, 0, 0, redX, redY);
+    bool foundGreen = findColor(0, 255, 0, greenX, greenY);
+    bool foundBlue = findColor(0, 0, 255, blueX, blueY);
+
+    stbi_image_free(data);
+
+    if (!foundRed || !foundGreen || !foundBlue) {
+        spdlog::error("[ViewportPanel] Missing required reference pixels in {}", fullPath.string());
+        return false;
+    }
+
+    m_carVisual.redXNorm = redX;
+    m_carVisual.redYNorm = redY;
+    m_carVisual.greenXNorm = greenX;
+    m_carVisual.greenYNorm = greenY;
+    m_carVisual.blueXNorm = blueX;
+    m_carVisual.blueYNorm = blueY;
+
+    m_carVisual.wheelbaseNorm = std::abs(m_carVisual.blueYNorm - m_carVisual.redYNorm);
+    m_carVisual.trackWidthNorm = std::abs(m_carVisual.redXNorm - m_carVisual.greenXNorm);
+
+    if (m_carVisual.wheelbaseNorm <= 1e-6) {
+        spdlog::warn("[ViewportPanel] Wheelbase reference degenerates, defaulting to 1.0");
+        m_carVisual.wheelbaseNorm = 1.0;
+    }
+    if (m_carVisual.trackWidthNorm <= 1e-6) {
+        spdlog::warn("[ViewportPanel] Track width reference degenerates, defaulting to 1.0");
+        m_carVisual.trackWidthNorm = 1.0;
+    }
+
+    return true;
 }
 
 void ViewportPanel::handleInput(GLFWwindow* window, const RenderState& state) {

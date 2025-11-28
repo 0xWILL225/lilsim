@@ -8,10 +8,13 @@
 #include <spdlog/spdlog.h>
 #include <ImGuiFileDialog.h>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <algorithm>
 #include <chrono>
 #include <thread>
+#include <vector>
+#include <cfloat>
 
 #ifdef Success
 #undef Success
@@ -25,6 +28,11 @@
 #include <imgui_impl_wgpu.h>
 
 #define WGPU_STR(s) WGPUStringView { s, WGPU_STRLEN }
+
+namespace {
+constexpr ImVec2 kFileDialogMinSize{700.0f, 420.0f};
+constexpr ImVec2 kFileDialogMaxSize{FLT_MAX, FLT_MAX};
+}
 
 namespace viz {
 
@@ -47,6 +55,7 @@ Application::Application(scene::SceneDB& db, sim::Simulator& sim)
   
   scanTrackDirectory();
   refreshAvailableModels();
+  syncParamProfileBuffer();
 }
 
 Application::~Application() {
@@ -266,6 +275,7 @@ void Application::onModelChanged() {
     // Cache states
     m_stateIdxX = -1; m_stateIdxY = -1; m_stateIdxYaw = -1; m_stateIdxV = -1;
     m_stateIdxAx = -1; m_stateIdxSteerWheelAngle = -1; m_stateIdxSteerWheelRate = -1;
+    m_stateIdxWheelFL = -1; m_stateIdxWheelFR = -1;
     
     for(size_t i=0; i<desc->num_states; ++i) {
         std::string name = desc->state_names[i];
@@ -276,6 +286,8 @@ void Application::onModelChanged() {
         else if (name == "ax") m_stateIdxAx = (int)i;
         else if (name == "steering_wheel_angle") m_stateIdxSteerWheelAngle = (int)i;
         else if (name == "steering_wheel_rate") m_stateIdxSteerWheelRate = (int)i;
+        else if (name == "wheel_fl_angle") m_stateIdxWheelFL = (int)i;
+        else if (name == "wheel_fr_angle") m_stateIdxWheelFR = (int)i;
     }
     
     // Cache params
@@ -296,6 +308,8 @@ void Application::onModelChanged() {
             break;
         }
     }
+
+  syncParamProfileBuffer();
 }
 
 void Application::handleInput() {
@@ -308,9 +322,12 @@ void Application::handleInput() {
   }
 
   const scene::Scene& scene = m_sceneDB.snapshot();
+  double simTime = m_sceneDB.tick.load(std::memory_order_relaxed) * m_simulator.getDt();
   ViewportPanel::RenderState renderState;
+  renderState.sim_time = simTime;
   if (m_stateIdxX >= 0 && (size_t)m_stateIdxX < scene.car_state_values.size()) renderState.x = scene.car_state_values[m_stateIdxX];
   if (m_stateIdxY >= 0 && (size_t)m_stateIdxY < scene.car_state_values.size()) renderState.y = scene.car_state_values[m_stateIdxY];
+  if (m_stateIdxYaw >= 0 && (size_t)m_stateIdxYaw < scene.car_state_values.size()) renderState.yaw = scene.car_state_values[m_stateIdxYaw];
   
   m_viewportPanel.handleInput(m_window, renderState);
 
@@ -380,95 +397,6 @@ void Application::setupPanels() {
   
   m_leftPanel.addSection("Markers", [this]() { });
   
-  m_rightPanel.addSection("Model Selection", [this]() {
-      std::string currentName = "None";
-      if (m_selectedModelIndex >= 0 && m_selectedModelIndex < (int)m_availableModels.size()) {
-          currentName = m_availableModels[m_selectedModelIndex].name;
-      } else {
-          // If no selection but sim has model, show it
-          std::string simModel = m_simulator.getCurrentModelName();
-          if (!simModel.empty()) currentName = simModel;
-      }
-
-      if (ImGui::BeginCombo("Model", currentName.c_str())) {
-          for (int i = 0; i < (int)m_availableModels.size(); ++i) {
-              bool isSelected = (m_selectedModelIndex == i);
-              if (ImGui::Selectable(m_availableModels[i].name.c_str(), isSelected)) {
-                  m_selectedModelIndex = i;
-                  if (m_simulator.loadModel(m_availableModels[i].path)) {
-                      onModelChanged();
-                  }
-              }
-              if (isSelected) ImGui::SetItemDefaultFocus();
-          }
-          ImGui::EndCombo();
-      }
-      
-      if (ImGui::Button("Refresh Models")) {
-          refreshAvailableModels();
-      }
-  });
-
-  m_rightPanel.addSection("Parameters", [this]() {
-      const auto* desc = m_simulator.getCurrentModelDescriptor();
-      if (!desc) return;
-      
-      if (m_simulator.checkAndClearModelChanged()) {
-          onModelChanged();
-      }
-      
-      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
-      
-      for (size_t i=0; i<desc->num_params; ++i) {
-          if (m_uiParamValues.size() <= i) break; 
-          double v = m_uiParamValues[i];
-          double min = desc->param_min[i];
-          double max = desc->param_max[i];
-          const char* name = desc->param_names[i];
-          
-          ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-          ImGui::BeginChild((std::string("##param_") + name).c_str(), ImVec2(0, 50), true);
-          ImGui::Text("%s", name);
-          ImGui::SetNextItemWidth(-1);
-          
-          if (ImGui::InputDouble((std::string("##input_") + name).c_str(), &v, 0.0, 0.0, "%.3f")) {
-              v = std::clamp(v, min, max);
-              m_uiParamValues[i] = v;
-              m_simulator.setParam(i, v);
-          }
-          ImGui::EndChild();
-          ImGui::PopStyleColor();
-      }
-      
-      ImGui::PopStyleVar();
-  });
-  
-  m_rightPanel.addSection("Settings", [this]() {
-      const auto* desc = m_simulator.getCurrentModelDescriptor();
-      if (!desc) return;
-      
-      for (size_t i=0; i<desc->num_settings; ++i) {
-          if (m_uiSettingValues.size() <= i) break;
-          int v = m_uiSettingValues[i];
-          const char* name = desc->setting_names[i];
-          
-          std::vector<const char*> options;
-          for(size_t k=0; k<desc->num_setting_options; ++k) {
-              if (desc->setting_option_setting_index[k] == (int32_t)i) {
-                  options.push_back(desc->setting_option_names[k]);
-              }
-          }
-          
-          if (!options.empty()) {
-              ImGui::SetNextItemWidth(-1);
-              if (ImGui::Combo(name, &v, options.data(), (int)options.size())) {
-                  m_uiSettingValues[i] = v;
-                  m_simulator.setSetting(i, v);
-              }
-          }
-      }
-  });
-
   m_rightPanel.addSection("Simulation Control", [this]() {
     bool isPaused = m_simulator.isPaused();
     
@@ -508,14 +436,175 @@ void Application::setupPanels() {
       m_simulator.reset();
     }
   });
+
+  m_rightPanel.addSection("Model Selection", [this]() {
+      std::string currentName = "None";
+      if (m_selectedModelIndex >= 0 && m_selectedModelIndex < (int)m_availableModels.size()) {
+          currentName = m_availableModels[m_selectedModelIndex].name;
+      } else {
+          // If no selection but sim has model, show it
+          std::string simModel = m_simulator.getCurrentModelName();
+          if (!simModel.empty()) currentName = simModel;
+      }
+
+      if (ImGui::BeginCombo("Model", currentName.c_str())) {
+          for (int i = 0; i < (int)m_availableModels.size(); ++i) {
+              bool isSelected = (m_selectedModelIndex == i);
+              if (ImGui::Selectable(m_availableModels[i].name.c_str(), isSelected)) {
+                  m_selectedModelIndex = i;
+                  if (m_simulator.loadModel(m_availableModels[i].path)) {
+                      onModelChanged();
+                  }
+              }
+              if (isSelected) ImGui::SetItemDefaultFocus();
+          }
+          ImGui::EndCombo();
+      }
+      
+      if (ImGui::Button("Refresh Models")) {
+          refreshAvailableModels();
+      }
+
+      ImGui::Separator();
+      ImGui::Text("Parameter Profile");
+      const ImGuiStyle& style = ImGui::GetStyle();
+      const float browseWidth = ImGui::CalcTextSize("Browse").x + style.FramePadding.x * 2.0f + 10.0f;
+      float firstRowWidth = ImGui::GetContentRegionAvail().x;
+      float inputWidth = std::max(50.0f, firstRowWidth - browseWidth - style.ItemSpacing.x);
+      ImGui::SetNextItemWidth(inputWidth);
+      ImGui::InputText("##paramProfilePath", m_paramFileBuffer, sizeof(m_paramFileBuffer));
+      ImGui::SameLine();
+      if (ImGui::Button("Browse##paramProfile", ImVec2(browseWidth, 0.0f))) {
+          IGFD::FileDialogConfig config;
+          std::filesystem::path initial = m_paramFileBuffer[0] ? std::filesystem::path(m_paramFileBuffer).parent_path()
+                                                               : std::filesystem::current_path();
+          config.path = initial.empty() ? "." : initial.string();
+          config.flags = ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_DontShowHiddenFiles;
+          ImGuiFileDialog::Instance()->OpenDialog("ParamProfileDialog", "Select Parameter File", ".yaml,.yml", config);
+      }
+
+      ImGui::Spacing();
+      float secondRowWidth = ImGui::GetContentRegionAvail().x;
+      float halfWidth = (secondRowWidth - style.ItemSpacing.x) * 0.5f;
+      if (ImGui::Button("Load Profile", ImVec2(halfWidth, 0.0f))) {
+          m_simulator.setParamProfileFile(std::string(m_paramFileBuffer));
+          syncParamProfileBuffer();
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Clear##paramProfile", ImVec2(halfWidth, 0.0f))) {
+          m_simulator.clearParamProfile();
+          syncParamProfileBuffer();
+      }
+      ImGui::TextUnformatted("Profile applies on Reset.");
+
+      if (ImGuiFileDialog::Instance()->Display("ParamProfileDialog", ImGuiWindowFlags_None, kFileDialogMinSize, kFileDialogMaxSize)) {
+          if (ImGuiFileDialog::Instance()->IsOk()) {
+              std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
+              if (!filePathName.empty()) {
+                  std::strncpy(m_paramFileBuffer, filePathName.c_str(), sizeof(m_paramFileBuffer) - 1);
+                  m_paramFileBuffer[sizeof(m_paramFileBuffer) - 1] = '\0';
+                  m_simulator.setParamProfileFile(filePathName);
+                  syncParamProfileBuffer();
+              }
+          }
+          ImGuiFileDialog::Instance()->Close();
+      }
+  });
+
+  m_rightPanel.addSection("Parameters", [this]() {
+      const auto* desc = m_simulator.getCurrentModelDescriptor();
+      if (!desc) return;
+      
+      if (m_simulator.checkAndClearModelChanged()) {
+          onModelChanged();
+      }
+
+      std::vector<double> pendingSnapshot;
+      if (m_simulator.consumePendingParamSnapshot(pendingSnapshot)) {
+          m_uiParamValues = pendingSnapshot;
+      }
+      
+      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+      
+      for (size_t i=0; i<desc->num_params; ++i) {
+          if (m_uiParamValues.size() <= i) break; 
+          double v = m_uiParamValues[i];
+          double min = desc->param_min[i];
+          double max = desc->param_max[i];
+          const char* name = desc->param_names[i];
+          
+          ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+          ImGui::BeginChild((std::string("##param_") + name).c_str(), ImVec2(0, 50), true);
+          ImGui::Text("%s", name);
+          ImGui::SetNextItemWidth(-1);
+          
+          if (ImGui::InputDouble((std::string("##input_") + name).c_str(), &v, 0.0, 0.0, "%.3f")) {
+              v = std::clamp(v, min, max);
+              m_uiParamValues[i] = v;
+              m_simulator.setParam(i, v);
+          }
+          ImGui::EndChild();
+          ImGui::PopStyleColor();
+      }
+      
+      ImGui::PopStyleVar();
+  });
   
+  m_rightPanel.addSection("Settings", [this]() {
+      const auto* desc = m_simulator.getCurrentModelDescriptor();
+      if (!desc) return;
+      
+      if (desc->setting_values && m_uiSettingValues.size() == desc->num_settings) {
+          for (size_t i = 0; i < desc->num_settings; ++i) {
+              m_uiSettingValues[i] = desc->setting_values[i];
+          }
+      }
+
+      for (size_t i=0; i<desc->num_settings; ++i) {
+          if (m_uiSettingValues.size() <= i) break;
+          int v = m_uiSettingValues[i];
+          const char* name = desc->setting_names[i];
+          
+          std::vector<const char*> options;
+          for(size_t k=0; k<desc->num_setting_options; ++k) {
+              if (desc->setting_option_setting_index[k] == (int32_t)i) {
+                  options.push_back(desc->setting_option_names[k]);
+              }
+          }
+          
+          if (!options.empty()) {
+              ImGui::SetNextItemWidth(-1);
+              if (ImGui::Combo(name, &v, options.data(), (int)options.size())) {
+                  m_uiSettingValues[i] = v;
+                  m_simulator.setSetting(i, v);
+              }
+          }
+      }
+  });
+
   m_rightPanel.addSection("Track Loading", [this]() {
       ImGui::Text("Track Directory:");
       ImGui::SetNextItemWidth(-80);
       ImGui::InputText("##trackdir", m_trackDirBuffer, sizeof(m_trackDirBuffer));
       ImGui::SameLine();
       if (ImGui::Button("Browse...")) {
-          // File dialog logic
+          IGFD::FileDialogConfig config;
+          config.path = m_trackDirBuffer[0] ? m_trackDirBuffer : ".";
+          config.flags = ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_DisableCreateDirectoryButton |
+                         ImGuiFileDialogFlags_OptionalFileName;
+          ImGuiFileDialog::Instance()->OpenDialog("TrackDirDialog", "Select Track Directory", nullptr, config);
+      }
+
+      if (ImGuiFileDialog::Instance()->Display("TrackDirDialog", ImGuiWindowFlags_None, kFileDialogMinSize, kFileDialogMaxSize)) {
+          if (ImGuiFileDialog::Instance()->IsOk()) {
+              std::string selectedPath = ImGuiFileDialog::Instance()->GetCurrentPath();
+              if (!selectedPath.empty()) {
+                  std::strncpy(m_trackDirBuffer, selectedPath.c_str(), sizeof(m_trackDirBuffer) - 1);
+                  m_trackDirBuffer[sizeof(m_trackDirBuffer) - 1] = '\0';
+                  scanTrackDirectory();
+              }
+          }
+          ImGuiFileDialog::Instance()->Close();
       }
       
       ImGui::Text("Tracks:");
@@ -572,11 +661,14 @@ void Application::setupPanels() {
 
 void Application::render2D() {
   const scene::Scene& scene = m_sceneDB.snapshot();
+  uint64_t tick = m_sceneDB.tick.load(std::memory_order_relaxed);
+  double simTime = tick * m_simulator.getDt();
   
   m_leftPanel.draw(m_width, m_height);
   m_rightPanel.draw(m_width, m_height);
   
   ViewportPanel::RenderState rs;
+  rs.sim_time = simTime;
   const auto* desc = m_simulator.getCurrentModelDescriptor();
   
   if (desc && !scene.car_state_values.empty()) {
@@ -585,11 +677,15 @@ void Application::render2D() {
       if (m_stateIdxYaw >= 0 && (size_t)m_stateIdxYaw < scene.car_state_values.size()) rs.yaw = scene.car_state_values[m_stateIdxYaw];
       if (m_stateIdxV >= 0 && (size_t)m_stateIdxV < scene.car_state_values.size()) rs.v = scene.car_state_values[m_stateIdxV];
       
-      if (m_paramIdxWheelbase >= 0 && (size_t)m_paramIdxWheelbase < m_uiParamValues.size()) {
-          rs.wheelbase = m_uiParamValues[m_paramIdxWheelbase];
+      if (m_paramIdxWheelbase >= 0 &&
+          desc->param_values &&
+          (size_t)m_paramIdxWheelbase < desc->num_params) {
+          rs.wheelbase = desc->param_values[m_paramIdxWheelbase];
       }
-      if (m_paramIdxTrackWidth >= 0 && (size_t)m_paramIdxTrackWidth < m_uiParamValues.size()) {
-          rs.track_width = m_uiParamValues[m_paramIdxTrackWidth];
+      if (m_paramIdxTrackWidth >= 0 &&
+          desc->param_values &&
+          (size_t)m_paramIdxTrackWidth < desc->num_params) {
+          rs.track_width = desc->param_values[m_paramIdxTrackWidth];
       }
       
       if (m_stateIdxAx >= 0 && (size_t)m_stateIdxAx < scene.car_state_values.size()) {
@@ -603,6 +699,14 @@ void Application::render2D() {
       if (m_stateIdxSteerWheelRate >= 0 && (size_t)m_stateIdxSteerWheelRate < scene.car_state_values.size()) {
           rs.steering_wheel_rate = scene.car_state_values[m_stateIdxSteerWheelRate];
       }
+
+      if (m_stateIdxWheelFL >= 0 && (size_t)m_stateIdxWheelFL < scene.car_state_values.size()) {
+          rs.wheel_fl_angle = scene.car_state_values[m_stateIdxWheelFL];
+      }
+
+      if (m_stateIdxWheelFR >= 0 && (size_t)m_stateIdxWheelFR < scene.car_state_values.size()) {
+          rs.wheel_fr_angle = scene.car_state_values[m_stateIdxWheelFR];
+      }
   }
   
   rs.cones = &scene.cones;
@@ -610,6 +714,21 @@ void Application::render2D() {
   float leftW = m_leftPanel.getWidth();
   float rightW = m_rightPanel.getWidth();
   m_viewportPanel.draw(leftW, 0, m_width - leftW - rightW, m_height, rs);
+}
+
+/**
+ * @brief Synchronize the parameter profile text buffer with simulator state.
+ */
+void Application::syncParamProfileBuffer() {
+  std::string pending = m_simulator.getPendingParamProfilePath();
+  std::string active = m_simulator.getActiveParamProfilePath();
+  const std::string& source = pending.empty() ? active : pending;
+  if (source.empty()) {
+    m_paramFileBuffer[0] = '\0';
+    return;
+  }
+  std::strncpy(m_paramFileBuffer, source.c_str(), sizeof(m_paramFileBuffer) - 1);
+  m_paramFileBuffer[sizeof(m_paramFileBuffer) - 1] = '\0';
 }
 
 void Application::scanTrackDirectory() {

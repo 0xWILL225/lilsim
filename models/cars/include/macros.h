@@ -44,8 +44,8 @@
 // ============================
 
 #define MANDATORY_PARAM_LIST(X)                                      \
-    PARAM_DOUBLE_ENTRY(X, wheelbase,   WHEELBASE_PARAM_NAME,   2.8, 0.0, 10.0)       \
-    PARAM_DOUBLE_ENTRY(X, track_width, TRACK_WIDTH_PARAM_NAME, 1.6, 0.0, 10.0)
+    PARAM_DOUBLE_ENTRY(X, wheelbase,   WHEELBASE_PARAM_NAME,   2.0, 0.0, 10.0)       \
+    PARAM_DOUBLE_ENTRY(X, track_width, TRACK_WIDTH_PARAM_NAME, 1.4, 0.0, 10.0)
 
 #ifndef PARAM_LIST
 #define PARAM_LIST(X) /* empty */
@@ -127,17 +127,17 @@
     }; \
     \
     /* Param Min */ \
-    static const double g_param_min[] = { \
+    static double g_param_min[] = { \
         FULL_PARAM_LIST(INTERNAL_PARAM_MIN) \
     }; \
     \
     /* Param Max */ \
-    static const double g_param_max[] = { \
+    static double g_param_max[] = { \
         FULL_PARAM_LIST(INTERNAL_PARAM_MAX) \
     }; \
     \
     /* Param Default */ \
-    static const double g_param_default[] = { \
+    static double g_param_default[] = { \
         FULL_PARAM_LIST(INTERNAL_PARAM_DEF) \
     }; \
     \
@@ -194,12 +194,12 @@
     }; \
     \
     /* Input Min */ \
-    static const double g_input_min[] = { \
+    static double g_input_min[] = { \
         INPUT_LIST(INTERNAL_INPUT_MIN) \
     }; \
     \
     /* Input Max */ \
-    static const double g_input_max[] = { \
+    static double g_input_max[] = { \
         INPUT_LIST(INTERNAL_INPUT_MAX) \
     }; \
     \
@@ -215,11 +215,11 @@
     }; \
     \
     /* State Min */ \
-    static const double g_state_min[] = { \
+    static double g_state_min[] = { \
         FULL_STATE_LIST(INTERNAL_STATE_MIN) \
     }; \
     \
     /* State Max */ \
-    static const double g_state_max[] = { \
+    static double g_state_max[] = { \
         FULL_STATE_LIST(INTERNAL_STATE_MAX) \
     }; 

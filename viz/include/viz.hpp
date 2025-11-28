@@ -12,6 +12,8 @@
 
 #include <GLFW/glfw3.h>
 #include <webgpu/webgpu.h>
+#include <vector>
+#include <chrono>
 
 #include "CarDefaults.hpp"
 #include "MarkerSystem.hpp"
@@ -87,6 +89,8 @@ private:
   int m_stateIdxAx = -1;
   int m_stateIdxSteerWheelAngle = -1;
   int m_stateIdxSteerWheelRate = -1;
+  int m_stateIdxWheelFL = -1;
+  int m_stateIdxWheelFR = -1;
   
   int m_paramIdxWheelbase = -1;
   int m_paramIdxTrackWidth = -1;
@@ -95,6 +99,7 @@ private:
   int m_stepN = 10;
 
   char m_trackDirBuffer[512] = "";
+  char m_paramFileBuffer[512] = "";
   std::vector<std::string> m_availableTracks;
   int m_selectedTrackIndex = -1;
   
@@ -113,6 +118,7 @@ private:
   void scanTrackDirectory();
   void refreshAvailableModels();
   void onModelChanged(); 
+  void syncParamProfileBuffer();
 };
 
 } // namespace viz

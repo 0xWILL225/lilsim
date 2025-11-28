@@ -103,30 +103,12 @@ struct SteeringDynamics {
   double steering_wheel_angle{0.0};
   double steering_wheel_rate{0.0};
   double front_wheel_angle{0.0};
-  double wheel_to_front_ratio{1.0};
-  double front_angle_min{-1.0};
-  double front_angle_max{1.0};
-  double wheel_angle_min{-1.0};
-  double wheel_angle_max{1.0};
   DelayBuffer delay;
 
   void configure(double dt,
                  double delay_sec,
-                 bool use_rate_input,
-                 double ratio,
-                 double min_front,
-                 double max_front,
-                 double min_wheel,
-                 double max_wheel) {
-    assert(ratio > 0.0 && "steering_rack_ratio must be positive");
-    assert(min_front <= max_front && "front wheel limits invalid");
-    assert(min_wheel <= max_wheel && "steering wheel limits invalid");
+                 bool use_rate_input) {
     use_rate = use_rate_input;
-    wheel_to_front_ratio = ratio;
-    front_angle_min = min_front;
-    front_angle_max = max_front;
-    wheel_angle_min = min_wheel;
-    wheel_angle_max = max_wheel;
     steering_wheel_angle = 0.0;
     steering_wheel_rate = 0.0;
     front_wheel_angle = 0.0;
@@ -140,7 +122,10 @@ struct SteeringDynamics {
 
   double step(double steering_wheel_angle_input,
               double steering_wheel_rate_input,
+              double rack_ratio,
               double dt) {
+    assert(rack_ratio > 0.0 && "steering_rack_ratio must be positive");
+
     double commanded_wheel_angle = steering_wheel_angle;
 
     if (use_rate) {
@@ -149,17 +134,37 @@ struct SteeringDynamics {
       commanded_wheel_angle = steering_wheel_angle_input;
     }
 
+    const double wheel_angle_min = g_state_min[ST_steering_wheel_angle];
+    const double wheel_angle_max = g_state_max[ST_steering_wheel_angle];
+
     commanded_wheel_angle =
         std::clamp(commanded_wheel_angle, wheel_angle_min, wheel_angle_max);
 
-    double target_front_angle = commanded_wheel_angle * wheel_to_front_ratio;
+    const double front_state_min = std::max(g_state_min[ST_wheel_fl_angle],
+                                            g_state_min[ST_wheel_fr_angle]);
+    const double front_state_max = std::min(g_state_max[ST_wheel_fl_angle],
+                                            g_state_max[ST_wheel_fr_angle]);
+    const double wheel_limit_min = std::min(wheel_angle_min, wheel_angle_max);
+    const double wheel_limit_max = std::max(wheel_angle_min, wheel_angle_max);
+    const double front_from_wheel_min = std::min(wheel_limit_min * rack_ratio,
+                                                 wheel_limit_max * rack_ratio);
+    const double front_from_wheel_max = std::max(wheel_limit_min * rack_ratio,
+                                                 wheel_limit_max * rack_ratio);
+    const double front_angle_min =
+        std::max(front_state_min, front_from_wheel_min);
+    const double front_angle_max =
+        std::min(front_state_max, front_from_wheel_max);
+    assert(front_angle_min <= front_angle_max &&
+           "Front wheel limits invalid after clamping.");
+
+    double target_front_angle = commanded_wheel_angle * rack_ratio;
     double delayed_front = delay.step(target_front_angle);
     front_wheel_angle =
         std::clamp(delayed_front, front_angle_min, front_angle_max);
 
     double previous_wheel_angle = steering_wheel_angle;
     double filtered_wheel_angle =
-        front_wheel_angle / wheel_to_front_ratio;
+        front_wheel_angle / rack_ratio;
     steering_wheel_angle =
         std::clamp(filtered_wheel_angle, wheel_angle_min, wheel_angle_max);
     steering_wheel_rate =
@@ -207,11 +212,6 @@ struct CarModel {
   std::array<double,  I_COUNT> input_values{};
   std::array<double,  ST_COUNT> state_values{};
 
-  // Cached parameters (updated on reset)
-  double wheelbase;
-  double v_max;
-  double steering_delay;
-  double drivetrain_delay;
   // Continuous state
   double x{0.0};
   double y{0.0};
@@ -231,18 +231,6 @@ struct CarModel {
     // We know we defined steering_input_mode as the only setting
     int32_t mode = setting_values[S_steering_input_mode];
     return (mode == 1); // 0: "angle", 1: "rate"
-  }
-
-  void updateCachedParams() {
-    static_assert(P_COUNT > 0, "This model requires at least 1 parameter.");
-    static_assert(P_wheelbase         < P_COUNT); 
-    static_assert(P_v_max             < P_COUNT);
-    static_assert(P_steering_delay    < P_COUNT);
-    static_assert(P_drivetrain_delay  < P_COUNT);
-    wheelbase        = param_values[P_wheelbase];
-    v_max            = param_values[P_v_max];
-    steering_delay   = param_values[P_steering_delay];
-    drivetrain_delay = param_values[P_drivetrain_delay];
   }
 
   void writeStateToArray() {
@@ -267,35 +255,6 @@ struct CarModel {
     state_values[ST_steering_wheel_rate] = steering_dyn.wheelRate();
     state_values[ST_ax]             = ax_observed;
     state_values[ST_v]              = v;
-  }
-
-  std::pair<double, double> frontAngleLimits(double ratio) const {
-    static_assert(ST_wheel_fl_angle < ST_COUNT);
-    static_assert(ST_wheel_fr_angle < ST_COUNT);
-    double min_fl = g_state_min[ST_wheel_fl_angle];
-    double min_fr = g_state_min[ST_wheel_fr_angle];
-    double max_fl = g_state_max[ST_wheel_fl_angle];
-    double max_fr = g_state_max[ST_wheel_fr_angle];
-    double min_front_state = std::max(min_fl, min_fr);
-    double max_front_state = std::min(max_fl, max_fr);
-    assert(min_front_state <= max_front_state && "Wheel angle limits do not overlap");
-
-    auto [wheel_min, wheel_max] = steeringWheelAngleLimits();
-    double min_front_from_wheel = std::min(wheel_min, wheel_max) * ratio;
-    double max_front_from_wheel = std::max(wheel_min, wheel_max) * ratio;
-
-    double min_front = std::max(min_front_state, min_front_from_wheel);
-    double max_front = std::min(max_front_state, max_front_from_wheel);
-    assert(min_front <= max_front && "Front limits invalid after applying rack ratio");
-    return {min_front, max_front};
-  }
-
-  std::pair<double, double> steeringWheelAngleLimits() const {
-    static_assert(ST_steering_wheel_angle < ST_COUNT);
-    double min_wheel = g_state_min[ST_steering_wheel_angle];
-    double max_wheel = g_state_max[ST_steering_wheel_angle];
-    assert(min_wheel <= max_wheel && "Steering wheel angle limits invalid");
-    return {min_wheel, max_wheel};
   }
 };
 
@@ -372,9 +331,6 @@ const char* car_model_get_name(void) {
 void car_model_reset(CarModel* model, double dt) {
   if (!model) return;
 
-  // Update cached params from param_values[]
-  model->updateCachedParams();
-
   auto extractStateValue = [&](StateIndex idx) -> double {
       if (idx >= 0 && idx < ST_COUNT) {
           return model->state_values[idx];
@@ -399,19 +355,11 @@ void car_model_reset(CarModel* model, double dt) {
   model->ax_observed = 0.0;
 
   // Configure dynamics based on params/settings
-  auto [wheel_min, wheel_max] = model->steeringWheelAngleLimits();
-  double rack_ratio = model->param_values[P_steering_rack_ratio];
   bool use_rate = model->useSteeringRate();
-  auto [front_min, front_max] = model->frontAngleLimits(rack_ratio);
   model->steering_dyn.configure(dt,
-                                model->steering_delay,
-                                use_rate,
-                                rack_ratio,
-                                front_min,
-                                front_max,
-                                wheel_min,
-                                wheel_max);
-  model->drivetrain_dyn.configure(dt, model->drivetrain_delay);
+                                model->param_values[P_steering_delay],
+                                use_rate);
+  model->drivetrain_dyn.configure(dt, model->param_values[P_drivetrain_delay]);
 
   // Write initial states
   model->writeStateToArray();
@@ -432,7 +380,10 @@ void car_model_step(CarModel* model, double dt) {
 
   // Actuator dynamics (get delayed steering angle and ax)
   double front_wheel_angle =
-      model->steering_dyn.step(wheel_angle_in, wheel_rate_in, dt);
+      model->steering_dyn.step(wheel_angle_in,
+                               wheel_rate_in,
+                               model->param_values[P_steering_rack_ratio],
+                               dt);
   double ax    = model->drivetrain_dyn.step(ax_in);
   model->ax_observed = ax;
 
@@ -441,7 +392,7 @@ void car_model_step(CarModel* model, double dt) {
   double y     = model->y;
   double yaw   = model->yaw;
   double v     = model->v;
-  double L     = model->wheelbase;
+  double L     = model->param_values[P_wheelbase];
 
   double dx    = v * std::cos(yaw);
   double dy    = v * std::sin(yaw);
@@ -454,7 +405,7 @@ void car_model_step(CarModel* model, double dt) {
   v   += dt * dv;
 
   // Clamp velocity
-  v = std::clamp(v, 0.0, model->v_max);
+  v = std::clamp(v, 0.0, model->param_values[P_v_max]);
 
   // Store back
   model->x   = x;

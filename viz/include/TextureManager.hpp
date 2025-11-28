@@ -5,6 +5,8 @@
 #include <string>
 #include <unordered_map>
 #include <filesystem>
+#include <optional>
+#include <array>
 
 namespace viz {
 
@@ -48,15 +50,23 @@ public:
    * 
    * @param assetPath Path relative to assets/ (e.g. "pixel_x2.png")
    * @param upscaleFactor Nearest-neighbor upscale factor for pixel art (1 = no upscaling)
+   * @param transparentFill Optional RGB fill that will be written into fully transparent pixels
    * @return TextureData containing the loaded texture, or nullptr on failure
    */
-  const TextureData* loadTexture(const std::string& assetPath, int upscaleFactor = 8);
+  const TextureData* loadTexture(const std::string& assetPath,
+                                 int upscaleFactor = 8,
+                                 std::optional<std::array<uint8_t,3>> transparentFill = std::nullopt);
 
   /**
    * @brief Get a previously loaded texture.
    * Returns nullptr if not loaded.
    */
   const TextureData* getTexture(const std::string& assetPath) const;
+
+  /**
+   * @brief Resolve a relative asset path to an absolute path on disk.
+   */
+  std::filesystem::path resolveAssetPath(const std::string& assetPath) const;
 
   /**
    * @brief Cleanup all textures and resources.

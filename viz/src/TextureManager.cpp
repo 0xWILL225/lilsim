@@ -66,7 +66,13 @@ std::filesystem::path TextureManager::getAssetsDirectory() const {
   return exePath.parent_path().parent_path().parent_path().parent_path() / "assets";
 }
 
-const TextureManager::TextureData* TextureManager::loadTexture(const std::string& assetPath, int upscaleFactor) {
+std::filesystem::path TextureManager::resolveAssetPath(const std::string& assetPath) const {
+  return getAssetsDirectory() / assetPath;
+}
+
+const TextureManager::TextureData* TextureManager::loadTexture(const std::string& assetPath,
+                                                               int upscaleFactor,
+                                                               std::optional<std::array<uint8_t,3>> transparentFill) {
   if (!m_initialized) {
     spdlog::error("[TextureManager] Not initialized. Call initialize() first.");
     return nullptr;
@@ -128,6 +134,20 @@ const TextureManager::TextureData* TextureManager::loadTexture(const std::string
   } else {
     // No upscaling
     imageData = originalData;
+  }
+
+  if (transparentFill.has_value()) {
+    const auto& fill = transparentFill.value();
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) {
+        int idx = (y * width + x) * 4;
+        if (imageData[idx + 3] == 0) {
+          imageData[idx + 0] = fill[0];
+          imageData[idx + 1] = fill[1];
+          imageData[idx + 2] = fill[2];
+        }
+      }
+    }
   }
 
   // Create WebGPU texture

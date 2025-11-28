@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <mutex>
+#include <unordered_map>
 
 #include "CarDefaults.hpp" 
 #include "scene.hpp"
@@ -17,6 +18,27 @@ namespace comm {
 }
 
 namespace sim {
+
+/** @brief Optional range overrides parsed from YAML profiles. */
+struct RangeOverride {
+  std::optional<double> min;
+  std::optional<double> max;
+};
+
+/** @brief Parameter override that also supports supplying a default value. */
+struct ParamOverride : RangeOverride {
+  std::optional<double> defaultValue;
+};
+
+/** @brief Parsed metadata profile describing per-model overrides. */
+struct MetadataProfile {
+  std::string path;
+  std::optional<std::string> declaredModel;
+  std::unordered_map<std::string, ParamOverride> paramOverrides;
+  std::unordered_map<std::string, RangeOverride> inputOverrides;
+  std::unordered_map<std::string, RangeOverride> stateOverrides;
+  std::unordered_map<std::string, std::string> settingDefaults;
+};
 
 class Simulator {
 public:
@@ -82,6 +104,16 @@ public:
   // Parameter updates
   void setParam(size_t index, double value);
   void setSetting(size_t index, int32_t value);
+
+  // Parameter profile (YAML) management
+  void setParamProfileFile(const std::string& path);
+  void clearParamProfile();
+  std::string getActiveParamProfilePath() const;
+  std::string getPendingParamProfilePath() const;
+  /**
+   * @brief Retrieve the latest pending parameter snapshot if it changed.
+   */
+  bool consumePendingParamSnapshot(std::vector<double>& out);
   
   bool checkAndClearModelChanged() {
     return m_modelChanged.exchange(false, std::memory_order_relaxed);
@@ -112,6 +144,15 @@ public:
 private:
   void loop();
   void probeConnection();
+  void captureBaseMetadata(const CarModelDescriptor* desc);
+  void restoreBaseMetadata(const CarModelDescriptor* desc);
+  void updateDescriptorViewLocked(const CarModelDescriptor* source);
+  void applyProfileMetadata(const CarModelDescriptor* desc,
+                            const MetadataProfile& profile);
+  void applyProfileRuntimeEffects(const CarModelDescriptor& desc,
+                                  const MetadataProfile& profile,
+                                  bool profileJustActivated);
+  void refreshDescriptorView();
 
   scene::SceneDB& m_db;
   std::atomic<bool> m_running{false};
@@ -139,6 +180,13 @@ private:
   CarModel* m_carModel{nullptr};
   mutable std::string m_currentModelName;
   std::atomic<bool> m_modelChanged{false};
+  CarModelDescriptor m_descriptorView{};
+  std::vector<double> m_paramMinBase;
+  std::vector<double> m_paramMaxBase;
+  std::vector<double> m_inputMinBase;
+  std::vector<double> m_inputMaxBase;
+  std::vector<double> m_stateMinBase;
+  std::vector<double> m_stateMaxBase;
   
   struct PendingParamUpdate { size_t index; double value; };
   struct PendingSettingUpdate { size_t index; int32_t value; };
@@ -146,6 +194,14 @@ private:
   std::mutex m_paramMutex; 
   std::vector<PendingParamUpdate> m_pendingParamUpdates;
   std::vector<PendingSettingUpdate> m_pendingSettingUpdates;
+
+  mutable std::mutex m_profileMutex;
+  std::shared_ptr<MetadataProfile> m_activeProfile;
+  std::shared_ptr<MetadataProfile> m_pendingProfile;
+  std::string m_activeProfilePath;
+  std::string m_pendingProfilePath;
+  bool m_profileClearRequested{false};
+  std::atomic<bool> m_pendingParamsDirty{true};
   
   // Communication
   std::unique_ptr<comm::CommServer> m_commServer;

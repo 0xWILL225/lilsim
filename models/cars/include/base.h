@@ -55,8 +55,8 @@ typedef struct CarModelDescriptor {
 
   size_t      num_params;
   const char* const* param_names;   // [num_params]
-  const double*      param_min;     // [num_params]
-  const double*      param_max;     // [num_params]
+  double*            param_min;     // [num_params]
+  double*            param_max;     // [num_params]
   double*            param_values;  // [num_params]
 
 
@@ -106,8 +106,8 @@ typedef struct CarModelDescriptor {
 
   size_t      num_inputs;
   const char* const* input_names;   // [num_inputs]
-  const double*      input_min;     // [num_inputs]
-  const double*      input_max;     // [num_inputs]
+  double*            input_min;     // [num_inputs]
+  double*            input_max;     // [num_inputs]
   double*            input_values;  // [num_inputs]
 
 
@@ -127,8 +127,8 @@ typedef struct CarModelDescriptor {
 
   size_t      num_states;
   const char* const* state_names;   // [num_states]
-  const double*      state_min;     // [num_states]
-  const double*      state_max;     // [num_states]
+  double*            state_min;     // [num_states]
+  double*            state_max;     // [num_states]
   double*            state_values;  // [num_states]
 
 } CarModelDescriptor;
