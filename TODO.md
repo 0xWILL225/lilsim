@@ -2,7 +2,7 @@
 - Generic car modeling over C ABI
 	- Parameters, inputs and states 
 		- wheelbase and track width obligatory parameters, defined even if model plugin author doesn't register them 
-		- Car pose (x, y, yaw), wheel_fr_angle and wheel_fl_angle obligatory states, model plugin invalid without them
+		- Car pose (x, y, yaw), front_right_wheel_angle and front_left_wheel_angle obligatory states, model plugin invalid without them
 			- These are required for visualization
 	- base.h and macro header
 	- Easy for user to define new car models
@@ -10,47 +10,75 @@
 		- One for each season's car - without needing to recompile the model
 		- Loaded in from GUI or by connected client
 - Car visuals updated
-	- 8 png's required
-		- Chassis (drawn under wheels) (chassis.png)
-			- Includes rear wheels visual, but not front wheels, only front suspension
-		- Chassis overlay (drawn on top of wheels) (overlay.png)
-			- Exact same pixel dimensions as Chassis
-		- Wheel/tire (symmetric, used for both front wheels) (tire.png)
-			- wheel rotates around exact center of this png
-		- TSAL Green (tsal_green.png)
-			- Exact same pixel dimensions as Chassis
-			- transparent except for green pixels where TSAL is
-		- TSAL Red (tsal_red.png)
-			- Exact same pixel dimensions as Chassis
-			- transparent except for red pixels where TSAL is
-		- ASSI Blue (assi_blue.png)
-			- Exact same pixel dimensions as Chassis
-			- transparent except for blue pixels where ASSIs are
-		- ASSI Yellow (assi_yellow.png)
-			- Exact same pixel dimensions as Chassis
-			- transparent except for yellow pixels where ASSis are
-		- Wheel and axle centerpoints (points.png)
-			- Exact same pixel dimensions as Chassis
-			- transparent except for 3 pixels of pre-defined RGB color codes that show the center points of the two front wheels, and the center of the rear axle 
-				- Left front wheel rotation center: Red (255,0,0)
-				- Right front wheel rotation center: Green (0,255,0)
-				- Center of rear axle (origin): Blue (0,0,255)
-			- The pixel at the center of the rear axle also marks the center of the local car coordinate system
-			- Along with this png and the wheelbase and track width parameters, the car can be faithfully rendered
-				- wheelbase is measured as the vertical distance between the red pixel (front axle) and the blue pixel (rear axle)
-				- track width is measured as the horizontal distance between the red pixel (center front left wheel) and green pixel (center front right wheel)
-			- Importantly, the center of the pixels are used, not any of the pixels' edges
-				- particularly important for placing the tires on the front axle and rotating them right
-	- Front wheels actually turn based on state (wheel_fl_angle and wheel_fr_angle)
+    - 8 png's required
+        - Chassis (drawn under wheels) (chassis.png)
+            - Includes rear wheels visual, but not front wheels, only front suspension
+        - Chassis overlay (drawn on top of wheels) (overlay.png)
+            - Exact same pixel dimensions as Chassis
+        - Wheel/tire (symmetric, used for both front wheels) (tire.png)
+            - wheel rotates around exact center of this png
+        - TSAL Green (tsal_green.png)
+            - Exact same pixel dimensions as Chassis
+            - transparent except for green pixels where TSAL is
+        - TSAL Red (tsal_red.png)
+            - Exact same pixel dimensions as Chassis
+            - transparent except for red pixels where TSAL is
+        - ASSI Blue (assi_blue.png)
+            - Exact same pixel dimensions as Chassis
+            - transparent except for blue pixels where ASSIs are
+        - ASSI Yellow (assi_yellow.png)
+            - Exact same pixel dimensions as Chassis
+            - transparent except for yellow pixels where ASSis are
+        - Wheel and axle centerpoints (points.png)
+            - Exact same pixel dimensions as Chassis
+            - transparent except for 3 pixels of pre-defined RGB color codes that show the center points of the two front wheels, and the center of the rear axle
+                - Left front wheel rotation center: Red (255,0,0)
+                - Right front wheel rotation center: Green (0,255,0)
+                - Center of rear axle (origin): Blue (0,0,255)
+            - The pixel at the center of the rear axle also marks the center of the local car coordinate system
+            - Along with this png and the wheelbase and track width parameters, the car can be faithfully rendered
+                - wheelbase is measured as the vertical distance between the red pixel (front axle) and the blue pixel (rear axle)
+                - track width is measured as the horizontal distance between the red pixel (center front left wheel) and green pixel (center front right wheel)
+            - Importantly, the center of the pixels are used, not any of the pixels' edges
+                - particularly important for placing the tires on the front axle and rotating them right
+    - Front wheels actually turn based on state (wheel_fl_angle and wheel_fr_angle)
+    - Just make red TSAL blink for now, no actual TS/AS states yet
+- ZeroMQ comms overhaul
+	- Update ZeroMQ comms to match new car model system
+		- No more specific types for state, input and parameters
+		- Metadata message used to link names with indices, indices used for raw payload state and control messages
+	- Separate CommServer and MarkerSubscriber into different header and source files
+	- Viz module communication over ZeroMQ instead of shared memory
+		- Perhaps except the inputs (needs consideration)
+			- Mapping of inputs also needs to be set by settings in the GUI, since car models now don't have any obligatory input types
+	- Update Python SDK to match changes and update the example jupyter notebook
 - Add car sprite marker
-	- Defined by obligatory car state variables (though wheel angle optional) and opacity
-- Viz module communication over ZeroMQ instead of shared memory
-	- Perhaps except the inputs (needs consideration)
-		- Mapping of inputs also needs to be set by settings in the GUI, since car models now don't have any obligatory input types
+	- Defined by obligatory car state variables (though wheel angles are optional) and opacity
+	- Optionally, a tint color and tint opacity can be specified to make it clearly separable from the actual car
+- Proper installation
+	- Make nice icon png with rounded edges
+	- Install script that installs the program properly and makes it launchable from start menu (from whatever menu opens when pressing the "Windows" key)
+		- Also makes it launchable from terminal as simple command
+- GUI configuration cache file
+	- Config file stores GUI state after ctrl+S is pressed
+		- Window size is stored
+		- Panel horizontal size and minimization state is stored
+		- Car model compiled dynamic library and parameter file paths are cached
+		- Read on every start up
+	- Top bar with "File" tab, where one can save and "save as..." the GUI config
+		- Can also set the absolute file path for what config file to use (ImGuiFileDialogue)
+- Make new project and new repo on Github with a better name for the simulator
+- Make a template repo for how a development repo can look like
+	- Separate repo in the same project on github
+	- Showing how to set up CMake to install custom car model and how to use the Python SDK in the example notebook
+- Can the C++ Eigen dependency be removed? 
+	- SE2 probably not used anymore right
+- Make it compile and run on Windows
+	- Jupyter notebook should also work
 - Clean up the repository and remove LiU and Rennteam specific skins
-	- Make a generic skin
+	- Make a generic default skin
 	- Make repo ready to show to others
-	- Update README.md with simple instructions and add ROADMAP.md
+	- Updated README.md with simple instructions and added ROADMAP.md
 	- Remove obvious LLM code comments (embarrassing)
 	  
 **When these things are ready, along with any necessary updates to the Python SDK, the first release should happen, and it should be shown to Rennteam and LiU Formula Student. At that point, it's ready for control algorithm development through a Python notebook.**
@@ -71,7 +99,7 @@
 		- Noise parameters mostly
 	- Wheel speed sensors model
 		- Should be fairly simple
-		- Should be enough information in the obligatory states (x, y, yaw, wheel_fr_angle and wheel_fl_angle)
+		- Should be enough information in the obligatory states (x, y, yaw, front_right_wheel_angle and front_left_wheel_angle)
 		- Slip ratio ignored if no slip_ratio_* states are declared (* being front_left, rear_right etc.)
 		- Would need effective_tire_radius state in order to output a rotational speed
 	- For users that don't want to implement sensor fusion client-side, provide pre-fused sensor measurements as well
@@ -86,9 +114,6 @@
 - ROS2 bridge
 	- Quite important for usability early on
 	- Example C++ node(s) for synchronous control usage
-- Visualization plug-ins
-	- For now, read ax, steering_wheel_angle (if available) and steering_wheel_rate (if available) to visualize the current viewport UI
-		- if not available for currently selected model, don't show the bars and steering wheel at all
 - Simulated timekeeping equipment
 	- Client application and GUI able to show laptimes, Accel/Skidpad times
 		- Also part of state published by Sim module --- providing tick and timestamp when touched by car sprite, can only be activated again after car has fully left the beam
@@ -100,9 +125,23 @@
 	- Boolean state if car is inside it with all 4 wheel center points
 	- Used to easily and automatically define success in driverless missions
 		- Helpul for headless simulation
+- Render nice asphalt texture as background
 - Procedurally generated AutoX/Trackdrive tracks
-	- including timekeeping equipment (start/finish line defined)
-	- check that github python script, maybe it can be repurposed
+	- including timekeeping equipment and large orange cones (start/finish line defined) 
+	- check that [github python project](https://github.com/mvanlobensels/random-track-generator/tree/main), maybe it can be repurposed and extended
+		- Rewrite in C++
+- Visualization plugins
+	- Plugin developer writes in "raw" WebGPU to draw their custom stuff in the Viewport
+	- Always base these visualizations off of sim/car state or events from the selected data source (by default, the simulator), and allow modification of visuals by parameters
+		- i.e. these plugins should not consider car model input or marker messages
+		- If ROS 2 node connected via bridge wants to make a plugin viz show, it must send state or event (data source must be the ROS 2 bridge)
+	- For now, read ax, steering_wheel_angle (if available) and steering_wheel_rate (if available) to visualize the current viewport UI
+		- if not available for currently selected model, don't show the bars and steering wheel at all
+	- All compiled plugins should be listed where currently the "Simulated objects" tab is in the left side panel
+		- So instead of simulated objects it will list all things that are visualized based on the actual state of the simulator, and events, not just physical objects in the sim
+		- This would be a good place for them I think.
+		- Add button like "load plugins" and when pressed it loads in all plugins that are installed in a given directory with fixed relative path to executable, similar to car model plugins 
+			- All viz plugins that are found in the directory that can successfully be loaded in will then appear in the list, alongside the "Car" and "Cones" lines
 - TS and AS (and EBS?) states
 	- Initially just TS and AS and purely for visualization purposes, and states are simply set by inputs - no logic inside sim
 	- TSAL and ASSI Viz reacts to states
@@ -131,6 +170,9 @@
 	- Complicated 4-wheel model with roll and pitch, advanced dynamics
 		- It's okay if it cannot run in real-time
 	- Input time jitter, not just delay
+- Mac OSX support
+	- Compile and run on Mac
+	- Need help from someone that has a Mac - or maybe try it in Quickemu VM?
 - C++ SDK
 	- C++ version of Python SDK with ZeroMQ client
 	- Small example program that uses it
@@ -145,13 +187,16 @@
 		- I like that markers are more of an online thing, like regardless of it's showing recorded data or if it's live simulation data, you can "draw" on the viewport to show things. I don't really see markers as part of any state or an event
 		- Visualizations based on state or events should be written as plug-ins, not use markers
 	- Possibility to open a new window that shows timeline data for all inputs and states
-- Gaussian noise standard deviation parameters for car model 
-	- parameters (std. dev. defined for each one separately)
-	- Used to determine stability under model uncertainty
+- Gaussian noise standard deviation parameters for...
+	- car model 
+		- parameters (std. dev. defined for each one separately)
+		- inputs?
+	- cone placement (same applied in x and y)
+		- regular uncorrelated to start with
 - Batched simulations, Sim without Viz (headless)
 	- Store data in MCAP for each simulation instance
-	- New sampling of noise to car parameters and cone placement for every instance
-	- Procedurally generated tracks that differ between runs (if AutoX and Trackdrive)
+	- Add noise to parameters, cone placement, etc.
+	- Procedurally generated tracks that differ between runs
 		- probably better to sample from pre-generated data set
 	- Run each step as fast as possible, no need to simulate real passing of time
 	- Viewer for batched sim results
@@ -169,6 +214,20 @@
 - **Debug console**
 	- Terminal inside the GUI that shows spdlog errors, warnings and info messages.
 	- Little icon in bottom bar that lights up with yellow triangle or red circle for warnings and errors respectively, much like IDEs do.
+- **Track editor**
+	- Add ability to go into "Edit mode"
+	- Make tracks with splines
+		- Maybe start with a procedurally generated track, and then edit from there
+	- Edit individual cones
+	- Add bus stops, chicanes and slaloms
+	- Add timekeeping equipment
+	- Save track that is currently in scene to file (ImGuiFileDialogue) 
+- **Simulink car modeling**
+	- Make it easy for users to define car models using simulink
+	- Simulink model compiled to C, then placed in a given directory together with a config file, script is run to generate glue and compile the model to a dynamic library (.dll/.so)
+- **Car model validation**
+	- New use case, comparing vehicle model (with current parameter set) with recorded vehicle data
+		- Requires good vehicle data, ideally with RTK/PPK GNSS positioning
 - **Upgrade to 3D**
 	- Optionally render everything in 3D instead of the standard 2D viewport
 	- Simple PBR pipeline and ideally a nice 3D environment that doesn't look like trash (like CarMaker and CARLA does)
@@ -182,8 +241,8 @@
 		- Would make rendering and VR support easier, most likely
 		- Integration with current C++ code would likely be harder
 		- Would learn Unity instead of the lower level stuff
-	- A 3D scene would allow simulating raw LiDAR output based on ray-tracing
-		- This is the most valuable addition, I believe
+	- A 3D scene would allow simulating raw LiDAR output based on ray-tracing on GPU
+		- This is the most valuable feature from adding the third dimension, I believe
 		- Requires a geometrically life-like scene with imperfections and competition-like environment
 		- Requires realistic simulation of LiDAR hardware --- noise in the right places and true-to-reality scanning behavior
 			- Ideally recorded point clouds from any LiDAR should be able to be used as input to a model generator that generates a realistic model of that LiDAR for use in simulation

@@ -6,8 +6,8 @@
 #include <vector>
 #include <numeric>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
+#ifndef INFINITY_DOUBLE
+#define INFINITY_DOUBLE std::numeric_limits<double>::infinity()
 #endif
 
 // ============================================================================
@@ -60,11 +60,11 @@
 // ============================
 
 #define MANDATORY_STATE_LIST(X)                                      \
-    STATE_DOUBLE_ENTRY(X, x,    X_STATE_NAME,   -10000.0, 10000.0)       \
-    STATE_DOUBLE_ENTRY(X, y,    Y_STATE_NAME,   -10000.0, 10000.0)       \
-    STATE_DOUBLE_ENTRY(X, yaw,  YAW_STATE_NAME,  -M_PI,  M_PI)       \
-    STATE_DOUBLE_ENTRY(X, wheel_fl_angle, WHEEL_FL_ANGLE_STATE_NAME, -M_PI/2, M_PI/2)       \
-    STATE_DOUBLE_ENTRY(X, wheel_fr_angle, WHEEL_FR_ANGLE_STATE_NAME, -M_PI/2, M_PI/2)       \
+    STATE_DOUBLE_ENTRY(X, x,    X_STATE_NAME,   -INFINITY_DOUBLE, INFINITY_DOUBLE)       \
+    STATE_DOUBLE_ENTRY(X, y,    Y_STATE_NAME,   -INFINITY_DOUBLE, INFINITY_DOUBLE)       \
+    STATE_DOUBLE_ENTRY(X, yaw,  YAW_STATE_NAME,  -INFINITY_DOUBLE,  INFINITY_DOUBLE)       \
+    STATE_DOUBLE_ENTRY(X, wheel_fl_angle, WHEEL_FL_ANGLE_STATE_NAME, -INFINITY_DOUBLE, INFINITY_DOUBLE)       \
+    STATE_DOUBLE_ENTRY(X, wheel_fr_angle, WHEEL_FR_ANGLE_STATE_NAME, -INFINITY_DOUBLE, INFINITY_DOUBLE)       \
 
 #ifndef STATE_LIST
 #define STATE_LIST(X) /* empty */

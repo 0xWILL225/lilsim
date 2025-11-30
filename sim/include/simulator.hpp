@@ -114,6 +114,10 @@ public:
    * @brief Retrieve the latest pending parameter snapshot if it changed.
    */
   bool consumePendingParamSnapshot(std::vector<double>& out);
+  /**
+   * @brief Retrieve the latest pending setting snapshot if it changed.
+   */
+  bool consumePendingSettingSnapshot(std::vector<int32_t>& out);
   
   bool checkAndClearModelChanged() {
     return m_modelChanged.exchange(false, std::memory_order_relaxed);
@@ -202,6 +206,7 @@ private:
   std::string m_pendingProfilePath;
   bool m_profileClearRequested{false};
   std::atomic<bool> m_pendingParamsDirty{true};
+  std::atomic<bool> m_pendingSettingsDirty{true};
   
   // Communication
   std::unique_ptr<comm::CommServer> m_commServer;

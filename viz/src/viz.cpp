@@ -554,10 +554,9 @@ void Application::setupPanels() {
       const auto* desc = m_simulator.getCurrentModelDescriptor();
       if (!desc) return;
       
-      if (desc->setting_values && m_uiSettingValues.size() == desc->num_settings) {
-          for (size_t i = 0; i < desc->num_settings; ++i) {
-              m_uiSettingValues[i] = desc->setting_values[i];
-          }
+      std::vector<int32_t> pendingSettings;
+      if (m_simulator.consumePendingSettingSnapshot(pendingSettings)) {
+          m_uiSettingValues = pendingSettings;
       }
 
       for (size_t i=0; i<desc->num_settings; ++i) {
@@ -675,7 +674,6 @@ void Application::render2D() {
       if (m_stateIdxX >= 0 && (size_t)m_stateIdxX < scene.car_state_values.size()) rs.x = scene.car_state_values[m_stateIdxX];
       if (m_stateIdxY >= 0 && (size_t)m_stateIdxY < scene.car_state_values.size()) rs.y = scene.car_state_values[m_stateIdxY];
       if (m_stateIdxYaw >= 0 && (size_t)m_stateIdxYaw < scene.car_state_values.size()) rs.yaw = scene.car_state_values[m_stateIdxYaw];
-      if (m_stateIdxV >= 0 && (size_t)m_stateIdxV < scene.car_state_values.size()) rs.v = scene.car_state_values[m_stateIdxV];
       
       if (m_paramIdxWheelbase >= 0 &&
           desc->param_values &&

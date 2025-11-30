@@ -15,11 +15,10 @@ public:
   enum class CameraMode { Free, CarFollow };
 
   struct RenderState {
-      double x{0}, y{0}, yaw{0}; // Car pose
-      double v{0};               // Car velocity
-      double wheelbase{2.8};     // For rendering size
-      double track_width{1.6};   // For rendering size
-      double sim_time{0.0};
+      double x{0}, y{0}, yaw{0}; // car pose
+      double wheelbase{1.0};     // for computing car size
+      double track_width{1.0};   // for computing car size
+      double sim_time{0.0};      // for timing blinking lights
       
       // Optional HUD states
       std::optional<double> ax;

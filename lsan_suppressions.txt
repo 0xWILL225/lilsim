@@ -1,8 +1,0 @@
-# Suppress known false positive from X11 Input Method initialization
-leak:_XimOpenIM
-leak:libX11.so
-
-# Suppress known false positives from Vulkan loader
-leak:libvulkan.so
-leak:wgpu_hal
-leak:wgpu_core

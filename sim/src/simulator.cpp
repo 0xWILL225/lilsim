@@ -237,6 +237,8 @@ bool Simulator::loadModel(const std::string& modelPath) {
     }
     updateDescriptorViewLocked(desc);
     m_pendingParamsDirty.store(true, std::memory_order_relaxed);
+    m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
+    // m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
 
     spdlog::info("[sim] Loaded model: {}", m_currentModelName);
     return true;
@@ -266,6 +268,7 @@ void Simulator::setParam(size_t index, double value) {
 void Simulator::setSetting(size_t index, int32_t value) {
     std::lock_guard<std::mutex> lock(m_paramMutex);
     m_pendingSettingUpdates.push_back({index, value});
+    m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
 }
 
 /**
@@ -314,6 +317,7 @@ void Simulator::clearParamProfile() {
 
     if (hadProfile) {
         m_pendingParamsDirty.store(true, std::memory_order_relaxed);
+        m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
         spdlog::info("[sim] Parameter profile clear requested. Press Reset to apply.");
     }
 }
@@ -377,6 +381,79 @@ bool Simulator::consumePendingParamSnapshot(std::vector<double>& out) {
     {
         std::lock_guard<std::mutex> paramLock(m_paramMutex);
         for (const auto& up : m_pendingParamUpdates) {
+            if (up.index < out.size()) {
+                out[up.index] = up.value;
+            }
+        }
+    }
+
+    return true;
+}
+
+/**
+ * @brief If pending settings changed, provide a snapshot (active + staged values).
+ * @param out Destination vector resized to the number of settings.
+ * @return True if a new snapshot was written, false if nothing changed.
+ */
+bool Simulator::consumePendingSettingSnapshot(std::vector<int32_t>& out) {
+    if (!m_pendingSettingsDirty.exchange(false, std::memory_order_relaxed)) {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> dataLock(m_dataMutex);
+    const CarModelDescriptor* desc = (m_modelLoader && m_carModel)
+        ? m_modelLoader->get_descriptor(m_carModel)
+        : nullptr;
+    if (!desc || !desc->setting_values) {
+        out.clear();
+        return true;
+    }
+
+    out.assign(desc->setting_values, desc->setting_values + desc->num_settings);
+
+    std::shared_ptr<MetadataProfile> pendingProfileCopy;
+    {
+        std::lock_guard<std::mutex> profileLock(m_profileMutex);
+        pendingProfileCopy = m_pendingProfile;
+    }
+
+    if (pendingProfileCopy &&
+        desc->setting_names &&
+        desc->setting_option_names &&
+        desc->setting_option_setting_index) {
+        for (const auto& [settingName, optionLabel] : pendingProfileCopy->settingDefaults) {
+            int settingIndex = -1;
+            for (size_t i = 0; i < desc->num_settings; ++i) {
+                if (desc->setting_names[i] && settingName == desc->setting_names[i]) {
+                    settingIndex = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (settingIndex < 0 || settingIndex >= static_cast<int>(out.size())) {
+                continue;
+            }
+
+            int localOptionIndex = 0;
+            int selectedLocal = -1;
+            for (size_t opt = 0; opt < desc->num_setting_options; ++opt) {
+                if (desc->setting_option_setting_index[opt] != settingIndex) continue;
+                const char* optName = desc->setting_option_names[opt];
+                if (optName && optionLabel == optName) {
+                    selectedLocal = localOptionIndex;
+                    break;
+                }
+                ++localOptionIndex;
+            }
+
+            if (selectedLocal >= 0) {
+                out[settingIndex] = selectedLocal;
+            }
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> paramLock(m_paramMutex);
+        for (const auto& up : m_pendingSettingUpdates) {
             if (up.index < out.size()) {
                 out[up.index] = up.value;
             }
@@ -729,6 +806,7 @@ void Simulator::loop() {
 
         updateDescriptorViewLocked(desc);
         m_pendingParamsDirty.store(true, std::memory_order_relaxed);
+        m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
         
         m_state.car_state_values.assign(desc->state_values, desc->state_values + desc->num_states);
         m_state.car_input_values.assign(desc->input_values, desc->input_values + desc->num_inputs);

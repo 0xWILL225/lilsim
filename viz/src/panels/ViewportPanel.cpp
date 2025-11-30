@@ -332,7 +332,7 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
       float val = (float)state.ax.value();
       float limit = 10.0f; // Fixed visual limit as per request? User said "if not defined ... hidden". 
                            // "ax_max" input limit might be different. 
-                           // User defined state range -10 to 10 in macros.h.
+                           // User defined state range -10 to 10 in macros.hpp.
       
       float bar_center_x = current_x - bar_width * 0.5f;
       float bar_top_y = current_y - bar_height;
