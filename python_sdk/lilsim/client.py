@@ -951,6 +951,71 @@ class LilsimClient:
         
         self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
 
+    def publish_car_marker(self, ns: str, id: int,
+                           pose: tuple[float, float, float],
+                           wheelbase: float,
+                           track_width: float,
+                           wheel_fl_angle: float | None = None,
+                           wheel_fr_angle: float | None = None,
+                           opacity: float = 1.0,
+                           tint_color: tuple[int, int, int, int] | None = None,
+                           tint_opacity: float = 0.0,
+                           frame_id: messages_pb2.FrameId = None,
+                           ttl_sec: float = 0.0):
+        """Publish a car sprite marker that reuses the simulator's car textures.
+
+        Args:
+            ns: Marker namespace.
+            id: Marker id within the namespace.
+            pose: Tuple of (x, y, yaw) in world coordinates.
+            wheelbase: Wheelbase in meters for scaling the sprite.
+            track_width: Track width in meters for scaling the sprite.
+            wheel_fl_angle: Optional front-left wheel angle in radians.
+            wheel_fr_angle: Optional front-right wheel angle in radians.
+            opacity: Overall sprite opacity [0, 1].
+            tint_color: Optional RGBA tuple (0-255) used for highlighting.
+            tint_opacity: Tint overlay opacity [0, 1].
+            frame_id: Frame the pose is expressed in (defaults to WORLD).
+            ttl_sec: Optional lifetime (0 = infinite).
+        """
+        marker = messages_pb2.Marker()
+        marker.ns = ns
+        marker.id = id
+        marker.type = messages_pb2.CAR_SPRITE
+        marker.pose.x = pose[0]
+        marker.pose.y = pose[1]
+        marker.pose.yaw = pose[2]
+        marker.frame_id = frame_id if frame_id is not None else messages_pb2.WORLD
+        marker.ttl_sec = ttl_sec
+        marker.visible = True
+
+        car = marker.car
+        car.wheelbase = float(wheelbase)
+        car.track_width = float(track_width)
+        if wheel_fl_angle is not None:
+            car.wheel_fl_angle = float(wheel_fl_angle)
+        if wheel_fr_angle is not None:
+            car.wheel_fr_angle = float(wheel_fr_angle)
+        car.opacity = float(np.clip(opacity, 0.0, 1.0))
+        car.tint_opacity = float(np.clip(tint_opacity, 0.0, 1.0))
+
+        if tint_color is not None:
+            marker.color.r = int(np.clip(tint_color[0], 0, 255))
+            marker.color.g = int(np.clip(tint_color[1], 0, 255))
+            marker.color.b = int(np.clip(tint_color[2], 0, 255))
+            marker.color.a = int(np.clip(tint_color[3], 0, 255))
+        else:
+            marker.color.r = 255
+            marker.color.g = 255
+            marker.color.b = 255
+            marker.color.a = 255
+
+        array = messages_pb2.MarkerArray()
+        array.header.version = 1
+        array.markers.append(marker)
+
+        self.marker_pub.send_multipart([b"MARKERS", array.SerializeToString()])
+
     def delete_marker(self, ns: str, marker_id: int):
         """Delete a specific marker.
         

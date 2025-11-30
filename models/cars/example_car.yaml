@@ -6,7 +6,7 @@ parameters:
   v_max: {min: 0.0, max: 100.0, default: 30.0}
   steering_delay: {min: 0.0, max: 1.0, default: 0.0}
   drivetrain_delay: {min: 0.0, max: 1.0, default: 0.0}
-  steering_rack_ratio: {min: 0.0, max: 15.0, default: 4.0}
+  steering_rack_ratio: {min: 0.0, max: 15.0, default: 4.6}
 
 inputs:
   steering_wheel_angle_input: {min: -3.0, max: 3.0}

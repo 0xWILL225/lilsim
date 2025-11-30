@@ -411,7 +411,44 @@ void Application::setupPanels() {
     ImGui::Checkbox("Cones", &m_showCones);
   });
   
-  m_leftPanel.addSection("Markers", [this]() { });
+  m_leftPanel.addSection("Markers", [this]() {
+    const auto& markers = m_markerSystem.getMarkers();
+    if (markers.empty()) {
+      ImGui::TextUnformatted("No markers");
+      return;
+    }
+
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::BeginListBox("##MarkerList", ImVec2(-1, 200.0f))) {
+      std::string currentNs;
+      for (const auto& entry : markers) {
+        const auto& key = entry.first;
+        const auto& marker = entry.second;
+
+        if (currentNs != key.ns) {
+          currentNs = key.ns;
+          ImGui::Separator();
+          bool nsVisible = m_markerSystem.isNamespaceVisible(currentNs);
+          if (ImGui::Checkbox(("##ns_" + currentNs).c_str(), &nsVisible)) {
+            m_markerSystem.setNamespaceVisible(currentNs, nsVisible);
+          }
+          ImGui::SameLine();
+          ImGui::TextUnformatted(currentNs.c_str());
+        }
+
+        ImGui::Indent();
+        bool markerVisible = marker.visible;
+        std::string label = "##marker_" + currentNs + "_" + std::to_string(key.id);
+        if (ImGui::Checkbox(label.c_str(), &markerVisible)) {
+          m_markerSystem.setMarkerVisible(currentNs, key.id, markerVisible);
+        }
+        ImGui::SameLine();
+        ImGui::Text("ID %d (%s)", key.id, marker.type == MarkerType::CAR_SPRITE ? "car" : "marker");
+        ImGui::Unindent();
+      }
+      ImGui::EndListBox();
+    }
+  });
   
   m_rightPanel.addSection("Simulation Control", [this]() {
     bool isPaused = m_simulator.isPaused();
@@ -1004,6 +1041,7 @@ void Application::pollMarkerMessages() {
       case ::lilsim::MarkerType::CIRCLE_LIST:   return MarkerType::CIRCLE_LIST;
       case ::lilsim::MarkerType::TRIANGLE_LIST: return MarkerType::TRIANGLE_LIST;
       case ::lilsim::MarkerType::MESH_2D:       return MarkerType::MESH_2D;
+      case ::lilsim::MarkerType::CAR_SPRITE:    return MarkerType::CAR_SPRITE;
       default:                                  return MarkerType::CIRCLE;
     }
   };
@@ -1058,6 +1096,30 @@ void Application::pollMarkerMessages() {
               static_cast<uint8_t>(col.g()),
               static_cast<uint8_t>(col.b()),
               static_cast<uint8_t>(col.a()));
+        }
+        if (marker.type == MarkerType::CAR_SPRITE && markerProto.has_car()) {
+          CarMarkerData carData;
+          const auto& carProto = markerProto.car();
+          carData.wheelbase = carProto.wheelbase() > 0.0 ? carProto.wheelbase() : 1.0;
+          carData.track_width = carProto.track_width() > 0.0 ? carProto.track_width() : 1.0;
+          if (carProto.has_wheel_fl_angle()) {
+            carData.has_wheel_fl_angle = true;
+            carData.wheel_fl_angle = carProto.wheel_fl_angle();
+          }
+          if (carProto.has_wheel_fr_angle()) {
+            carData.has_wheel_fr_angle = true;
+            carData.wheel_fr_angle = carProto.wheel_fr_angle();
+          }
+          if (carProto.has_opacity()) {
+            carData.opacity = std::clamp(carProto.opacity(), 0.0, 1.0);
+          }
+          if (carProto.has_tint_opacity()) {
+            carData.tint_opacity = std::clamp(carProto.tint_opacity(), 0.0, 1.0);
+          }
+          marker.car = carData;
+        } else if (marker.type == MarkerType::CAR_SPRITE) {
+          spdlog::warn("[viz] CAR_SPRITE marker missing car payload (ns '{}', id {}).",
+                       markerProto.ns(), markerProto.id());
         }
         marker.visible = markerProto.visible();
         m_markerSystem.addMarker(markerProto.ns(), markerProto.id(), marker, simTime);

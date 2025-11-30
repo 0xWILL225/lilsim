@@ -55,8 +55,10 @@
 - Fix so that the model parameter loader can read in "infinity" from yaml file
 - Add simulation run speed and dt parameters in Simulation Control tab 
 - Add car sprite marker
-	- Defined by obligatory car state variables (though wheel angles are optional) and opacity
+	- Marker that renders like the car
+	- Defined by obligatory car state variables (though front wheel angles are optional) and opacity
 	- Optionally, a tint color and tint opacity can be specified to make it clearly separable from the actual car
+	- No TSAL or ASSI stuff required for car markers
 - Proper installation
 	- Make nice icon png with rounded edges
 	- Install script that installs the program properly and makes it launchable from start menu (from whatever menu opens when pressing the "Windows" key)
@@ -77,13 +79,15 @@
 	- SE2 probably not used anymore right
 - Make it compile and run on Windows
 	- Jupyter notebook should also work
-- Clean up the repository and remove LiU and Rennteam specific skins
+- Clean up the repository and remove team specific skins
 	- Make a generic default skin
+	- Make tire and chassis coloring look better
 	- Make repo ready to show to others
 	- Updated README.md with simple instructions and added ROADMAP.md
 	- Remove obvious LLM code comments (embarrassing)
+	- Make a nice GIF for the README that shows a pretty skidpad run with the default skin
 	  
-**When these things are ready, along with any necessary updates to the Python SDK, the first release should happen, and it should be shown to Rennteam and LiU Formula Student. At that point, it's ready for control algorithm development through a Python notebook.**
+**When these things are ready, along with any necessary updates to the Python SDK, the first release should happen, and it should be shown to the Rennteam and LiU Formula Student. At that point, it's ready for control algorithm development through a Python notebook.**
 #### Roadmap
 - Sensor models
 	- Will be another type of state beside cone positions and car state

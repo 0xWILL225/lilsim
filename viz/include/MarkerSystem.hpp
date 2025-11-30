@@ -13,15 +13,16 @@ namespace viz {
 
 namespace lilsim {
   enum FrameId { WORLD = 0, CAR = 1 };
-  enum MarkerType { 
-      CIRCLE=0, 
-      RECTANGLE=1, 
-      TEXT=2, 
-      ARROW=3, 
-      LINE_STRIP=4, 
-      CIRCLE_LIST=5, 
-      TRIANGLE_LIST=6, 
-      MESH_2D=7 
+  enum MarkerType {
+      CIRCLE=0,
+      RECTANGLE=1,
+      TEXT=2,
+      ARROW=3,
+      LINE_STRIP=4,
+      CIRCLE_LIST=5,
+      TRIANGLE_LIST=6,
+      MESH_2D=7,
+      CAR_SPRITE=8
   };
 }
 
@@ -65,6 +66,17 @@ struct Scale2D {
   }
 };
 
+struct CarMarkerData {
+  double wheelbase{1.0};
+  double track_width{1.0};
+  bool has_wheel_fl_angle{false};
+  double wheel_fl_angle{0.0};
+  bool has_wheel_fr_angle{false};
+  double wheel_fr_angle{0.0};
+  double opacity{1.0};
+  double tint_opacity{0.0};
+};
+
 /**
  * @brief A single marker for visualization.
  */
@@ -80,6 +92,7 @@ struct Marker {
   std::string text;                      // For Text markers
   std::vector<common::Position> points;  // For line/point/triangle-based markers
   std::vector<Color> colors;             // Per-vertex colors (for LineStrip, TriangleList, CircleList)
+  std::optional<CarMarkerData> car;      // For CAR_SPRITE
   
   // Internal state
   double creation_time{0.0};  // Simulation time when created

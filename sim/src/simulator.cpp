@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cmath>
+#include <cctype>
 #include <filesystem>
 #include <algorithm>
 #include <iostream>
@@ -38,12 +39,48 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
         profile->declaredModel = modelNode.as<std::string>();
     }
 
-    auto parseRange = [](const YAML::Node& node, RangeOverride& range) {
-        if (auto minNode = node["min"]; minNode && minNode.IsScalar()) {
-            range.min = minNode.as<double>();
+    auto parseScalarDouble = [](const YAML::Node& value) -> std::optional<double> {
+        if (!value || !value.IsScalar()) {
+            return std::nullopt;
         }
-        if (auto maxNode = node["max"]; maxNode && maxNode.IsScalar()) {
-            range.max = maxNode.as<double>();
+        std::string raw = value.as<std::string>();
+        std::string lower = raw;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+
+        auto isPositiveInf = [](const std::string& s) {
+            return s == "inf" || s == "+inf" || s == "infinity" || s == "+infinity";
+        };
+        auto isNegativeInf = [](const std::string& s) {
+            return s == "-inf" || s == "-infinity";
+        };
+
+        if (isPositiveInf(lower)) {
+            return std::numeric_limits<double>::infinity();
+        }
+        if (isNegativeInf(lower)) {
+            return -std::numeric_limits<double>::infinity();
+        }
+
+        try {
+            return value.as<double>();
+        } catch (const YAML::BadConversion& e) {
+            spdlog::warn("[sim] Failed to parse scalar '{}' as double: {}", raw, e.what());
+            return std::nullopt;
+        }
+    };
+
+    auto parseRange = [&](const YAML::Node& node, RangeOverride& range) {
+        if (auto minNode = node["min"]) {
+            if (auto parsed = parseScalarDouble(minNode)) {
+                range.min = parsed;
+            }
+        }
+        if (auto maxNode = node["max"]) {
+            if (auto parsed = parseScalarDouble(maxNode)) {
+                range.max = parsed;
+            }
         }
     };
 
@@ -53,8 +90,10 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
             std::string name = entry.first.as<std::string>();
             ParamOverride override{};
             parseRange(entry.second, override);
-            if (auto defNode = entry.second["default"]; defNode && defNode.IsScalar()) {
-                override.defaultValue = defNode.as<double>();
+            if (auto defNode = entry.second["default"]) {
+                if (auto parsed = parseScalarDouble(defNode)) {
+                    override.defaultValue = parsed;
+                }
             }
             profile->paramOverrides[name] = override;
         }

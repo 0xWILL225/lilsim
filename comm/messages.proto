@@ -165,6 +165,15 @@ enum FrameId {
   CAR   = 1;
 }
 
+message CarMarker {
+  double wheelbase = 1;
+  double track_width = 2;
+  optional double wheel_fl_angle = 3;
+  optional double wheel_fr_angle = 4;
+  optional double opacity = 5;
+  optional double tint_opacity = 6;
+}
+
 enum MarkerType {
   TEXT          = 0;
   ARROW         = 1;
@@ -174,6 +183,7 @@ enum MarkerType {
   CIRCLE_LIST   = 5;
   TRIANGLE_LIST = 6;
   MESH_2D       = 7;
+  CAR_SPRITE    = 8;
 }
 
 message Marker {
@@ -189,6 +199,7 @@ message Marker {
   repeated Color colors   = 11; // Per-vertex colors (for LINE_STRIP, TRIANGLE_LIST, CIRCLE_LIST)
   double     ttl_sec      = 9;  // Time-to-live (0 = infinite)
   bool       visible      = 10; // Visibility flag
+  optional CarMarker car  = 13; // Only for CAR_SPRITE
 }
 
 message MarkerArray {
