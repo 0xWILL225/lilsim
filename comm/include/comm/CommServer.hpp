@@ -60,6 +60,10 @@ public:
    * @param update The state update to publish
    */
   void publishState(const lilsim::StateUpdate& update);
+  /**
+   * @brief Publish a metadata update (non-blocking).
+   */
+  void publishMetadata(const lilsim::ModelMetadata& metadata);
 
   /**
    * @brief Request control from client (blocking with timeout)
@@ -113,9 +117,15 @@ public:
     return m_syncClientConnected.load(std::memory_order_relaxed);
   }
 
+  /**
+   * @brief Shared ZeroMQ context for inproc sockets (viz GUI).
+   */
+  std::shared_ptr<zmq::context_t> getContext() const { return m_context; }
+
 private:
-  std::unique_ptr<zmq::context_t> m_context;
+  std::shared_ptr<zmq::context_t> m_context;
   std::unique_ptr<zmq::socket_t> m_statePub;        // PUB socket for state updates
+  std::unique_ptr<zmq::socket_t> m_metadataPub;     // PUB socket for metadata updates
   std::unique_ptr<zmq::socket_t> m_controlDealer;   // DEALER socket for control requests/replies (sync)
   std::unique_ptr<zmq::socket_t> m_controlAsyncSub; // SUB socket for async control
   std::unique_ptr<zmq::socket_t> m_adminRep;        // REP socket for admin commands

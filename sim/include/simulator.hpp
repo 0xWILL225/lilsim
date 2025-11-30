@@ -12,9 +12,21 @@
 #include "scene.hpp"
 #include "SE2.hpp"
 #include "ModelLoader.hpp"
+#include "messages.pb.h"
 
 namespace comm {
   class CommServer;
+}
+
+namespace zmq {
+  class context_t;
+}
+
+namespace lilsim {
+  class AdminCommand;
+  class AdminReply;
+  class ControlAsync;
+  class ModelMetadata;
 }
 
 namespace sim {
@@ -65,9 +77,16 @@ public:
   }
   void step(uint64_t numTicks) {
     m_stepTarget.store(numTicks, std::memory_order_relaxed);
+    if (numTicks > 0) {
+      m_paused.store(false, std::memory_order_relaxed);
+    }
   }
   
   double getDt() const;
+  double getRequestedDt() const;
+  void requestDt(double dtSeconds);
+  void setRunSpeed(double multiplier);
+  double getRunSpeed() const;
   
   uint64_t getTicksRemaining() const {
     return m_stepTarget.load(std::memory_order_relaxed);
@@ -134,6 +153,9 @@ public:
   bool isSyncMode() const {
     return m_syncMode.load(std::memory_order_relaxed);
   }
+  bool isExternalControlEnabled() const {
+    return m_externalControlEnabled.load(std::memory_order_relaxed);
+  }
   void setControlPeriodMs(uint32_t period_ms) {
     m_controlPeriodMs.store(period_ms, std::memory_order_relaxed);
   }
@@ -144,10 +166,15 @@ public:
     return m_controlPeriodTicks.load(std::memory_order_relaxed);
   }
   bool isSyncClientConnected() const;
+  std::shared_ptr<zmq::context_t> getCommContext() const;
+  uint64_t getMetadataVersion() const {
+    return m_metadataVersion.load(std::memory_order_relaxed);
+  }
   
 private:
   void loop();
   void probeConnection();
+  void ensureCommServer();
   void captureBaseMetadata(const CarModelDescriptor* desc);
   void restoreBaseMetadata(const CarModelDescriptor* desc);
   void updateDescriptorViewLocked(const CarModelDescriptor* source);
@@ -157,6 +184,24 @@ private:
                                   const MetadataProfile& profile,
                                   bool profileJustActivated);
   void refreshDescriptorView();
+  void publishStateUpdate(const CarModelDescriptor* desc,
+                          const scene::Scene& snapshot,
+                          uint64_t tick,
+                          double simTime);
+  void broadcastMetadata(const CarModelDescriptor* desc, const char* reason);
+  lilsim::ModelMetadata buildModelMetadata(const CarModelDescriptor* desc);
+  void handleAdminCommands(const CarModelDescriptor* desc, double dt);
+  bool handleAdminCommand(const lilsim::AdminCommand& cmd,
+                          const CarModelDescriptor* desc,
+                          lilsim::AdminReply& reply,
+                          double dt);
+  void stageParamUpdate(size_t index, double value);
+  void stageSettingUpdate(size_t index, int32_t value);
+  void applyAsyncControl(const lilsim::ControlAsync& control,
+                         const CarModelDescriptor* desc);
+  bool requestSyncControl(const CarModelDescriptor* desc,
+                          double simTime,
+                          uint64_t tick);
 
   scene::SceneDB& m_db;
   std::atomic<bool> m_running{false};
@@ -211,10 +256,21 @@ private:
   // Communication
   std::unique_ptr<comm::CommServer> m_commServer;
   std::atomic<bool> m_commEnabled{false};
-  std::atomic<bool> m_syncMode{false}; 
+  std::atomic<bool> m_syncMode{false};
+  std::atomic<bool> m_externalControlEnabled{false};
   std::atomic<uint32_t> m_controlPeriodMs{100};
   std::atomic<uint32_t> m_controlPeriodTicks{10}; 
+  std::atomic<double> m_runSpeed{1.0};
+  std::atomic<double> m_dt{common::CarDefaults::dt};
+  mutable std::mutex m_dtMutex;
+  std::optional<double> m_pendingDt;
   std::vector<double> m_lastControlInput;
+  std::atomic<uint64_t> m_metadataVersion{0};
+  mutable std::mutex m_metadataMutex;
+  lilsim::ModelMetadata m_cachedMetadata;
+  bool m_metadataDirty{true};
+  std::vector<double> m_asyncInputValues;
+  std::atomic<bool> m_asyncInputPending{false};
 };
 
 } // namespace sim

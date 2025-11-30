@@ -4,24 +4,31 @@ import numpy as np
 from . import messages_pb2
 
 
-def state_to_dict(state: messages_pb2.StateUpdate) -> dict:
-    """Convert a StateUpdate to a dictionary for easy access.
-    
-    Args:
-        state: StateUpdate message
-        
-    Returns:
-        Dictionary with flattened state info
-    """
-    return {
+def state_to_dict(state: messages_pb2.StateUpdate, metadata: messages_pb2.ModelMetadata) -> dict:
+    """Convert a StateUpdate into named dicts using metadata."""
+    data = {
         'tick': state.scene.header.tick,
         'sim_time': state.scene.header.sim_time,
-        'x': state.scene.car.pos.x,
-        'y': state.scene.car.pos.y,
-        'yaw': state.scene.car.yaw,
-        'v': state.scene.car.v,
-        'yaw_rate': state.scene.car.yaw_rate,
+        'states': {},
+        'inputs': {},
+        'params': {},
+        'settings': {},
     }
+    if metadata is None:
+        return data
+    for idx, value in enumerate(state.scene.state_values):
+        name = metadata.states[idx].name if idx < len(metadata.states) else f'state_{idx}'
+        data['states'][name] = value
+    for idx, value in enumerate(state.scene.input_values):
+        name = metadata.inputs[idx].name if idx < len(metadata.inputs) else f'input_{idx}'
+        data['inputs'][name] = value
+    for idx, value in enumerate(state.scene.param_values):
+        name = metadata.params[idx].name if idx < len(metadata.params) else f'param_{idx}'
+        data['params'][name] = value
+    for idx, value in enumerate(state.scene.setting_values):
+        name = metadata.settings[idx].name if idx < len(metadata.settings) else f'setting_{idx}'
+        data['settings'][name] = int(value)
+    return data
 
 def pure_pursuit_controller(target_x: float, target_y: float, 
                             car_x: float, car_y: float, car_yaw: float,

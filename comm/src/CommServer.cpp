@@ -8,11 +8,14 @@ namespace comm {
 // ============ CommServer ============
 
 CommServer::CommServer() 
-  : m_context(std::make_unique<zmq::context_t>(1)) {
+  : m_context(std::make_shared<zmq::context_t>(1)) {
 }
 
 CommServer::~CommServer() {
   stop();
+  if (m_context) {
+    m_context->shutdown();
+  }
 }
 
 bool CommServer::start() {
@@ -25,23 +28,32 @@ bool CommServer::start() {
     // Create state publisher (PUB)
     m_statePub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::pub);
     m_statePub->bind(endpoints::STATE_PUB);
-    spdlog::info("[comm] State publisher bound to {}", endpoints::STATE_PUB);
+    m_statePub->bind(endpoints::STATE_PUB_INPROC);
+    spdlog::info("[comm] State publisher bound to {} and {}", endpoints::STATE_PUB, endpoints::STATE_PUB_INPROC);
+
+    m_metadataPub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::pub);
+    m_metadataPub->bind(endpoints::METADATA_PUB);
+    m_metadataPub->bind(endpoints::METADATA_PUB_INPROC);
+    spdlog::info("[comm] Metadata publisher bound to {} and {}", endpoints::METADATA_PUB, endpoints::METADATA_PUB_INPROC);
 
     // Create control dealer (DEALER) - for synchronous mode
     m_controlDealer = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::dealer);
     m_controlDealer->bind(endpoints::CONTROL_REQ);
-    spdlog::info("[comm] Control dealer bound to {}", endpoints::CONTROL_REQ);
+    m_controlDealer->bind(endpoints::CONTROL_REQ_INPROC);
+    spdlog::info("[comm] Control dealer bound to {} and {}", endpoints::CONTROL_REQ, endpoints::CONTROL_REQ_INPROC);
 
     // Create async control subscriber (SUB) - for asynchronous mode
     m_controlAsyncSub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::sub);
     m_controlAsyncSub->bind(endpoints::CONTROL_ASYNC_SUB);
+    m_controlAsyncSub->bind(endpoints::CONTROL_ASYNC_SUB_INPROC);
     m_controlAsyncSub->set(zmq::sockopt::subscribe, ""); // Subscribe to all messages
-    spdlog::info("[comm] Async control subscriber bound to {}", endpoints::CONTROL_ASYNC_SUB);
+    spdlog::info("[comm] Async control subscriber bound to {} and {}", endpoints::CONTROL_ASYNC_SUB, endpoints::CONTROL_ASYNC_SUB_INPROC);
 
     // Create admin replier (REP)
     m_adminRep = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::rep);
     m_adminRep->bind(endpoints::ADMIN_REP);
-    spdlog::info("[comm] Admin replier bound to {}", endpoints::ADMIN_REP);
+    m_adminRep->bind(endpoints::ADMIN_REP_INPROC);
+    spdlog::info("[comm] Admin replier bound to {} and {}", endpoints::ADMIN_REP, endpoints::ADMIN_REP_INPROC);
 
     m_running.store(true, std::memory_order_relaxed);
     return true;
@@ -65,6 +77,10 @@ void CommServer::stop() {
     if (m_statePub) {
       m_statePub->close();
       m_statePub.reset();
+    }
+    if (m_metadataPub) {
+      m_metadataPub->close();
+      m_metadataPub.reset();
     }
     if (m_controlDealer) {
       m_controlDealer->close();
@@ -97,6 +113,18 @@ void CommServer::publishState(const lilsim::StateUpdate& update) {
     sendProto(*m_statePub, update, zmq::send_flags::dontwait);
   } catch (const zmq::error_t& e) {
     spdlog::error("[comm] Error publishing state: {}", e.what());
+  }
+}
+
+void CommServer::publishMetadata(const lilsim::ModelMetadata& metadata) {
+  if (!m_running.load(std::memory_order_relaxed) || !m_metadataPub) {
+    return;
+  }
+
+  try {
+    sendProto(*m_metadataPub, metadata, zmq::send_flags::dontwait);
+  } catch (const zmq::error_t& e) {
+    spdlog::error("[comm] Error publishing metadata: {}", e.what());
   }
 }
 

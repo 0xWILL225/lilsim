@@ -97,10 +97,13 @@ enum AdminCommandType {
   STEP  = 4;
   SET_PARAMS = 5;
   SET_SETTINGS = 6;
-  SET_MODE = 7;  // Set sync/async mode
+  SET_CONTROL_MODE = 7;  // Set sync/async mode and control source
   SET_TRACK = 8; // Load track from file
   LOAD_PARAM_PROFILE = 9;
   CLEAR_PARAM_PROFILE = 10;
+  GET_METADATA = 11;
+  SET_SIM_CONFIG = 12;
+  GET_SIM_CONFIG = 13;
 }
 
 message IndexedDouble {
@@ -119,16 +122,22 @@ message AdminCommand {
   uint64           step_count = 3;  // for STEP
   repeated IndexedDouble param_updates = 4;   // for SET_PARAMS/INIT
   repeated IndexedInt32  setting_updates = 5; // for SET_SETTINGS/INIT
-  bool             sync_mode  = 6;  // for SET_MODE
+  bool             sync_mode  = 6;  // for SET_CONTROL_MODE
   uint32           control_period_ms = 7; // milliseconds between control requests (sync mode)
   string           track_path = 8;  // for SET_TRACK
   string           param_profile_path = 9; // for LOAD_PARAM_PROFILE
+  optional bool    use_external_control = 10; // true = ZeroMQ client, false = GUI
+  optional double  timestep = 11; // seconds, for SET_SIM_CONFIG
+  optional double  run_speed = 12; // multiplier, for SET_SIM_CONFIG
 }
 
 message AdminReply {
   Header header  = 1;
   bool   success = 2;
   string message = 3;
+  ModelMetadata metadata = 4;
+  optional double timestep = 5;
+  optional double run_speed = 6;
 }
 
 // ============ Marker visualization ============

@@ -141,16 +141,29 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
     
     const auto& markers = m_markerSystem->getMarkers();
     for (const auto& [key, marker] : markers) {
-        if (!m_markerSystem->isMarkerVisible(key.ns, key.id)) continue;
+        if (!m_markerSystem->isMarkerVisible(key.ns, key.id)) {
+            continue;
+        }
         if (marker.type == viz::lilsim::LINE_STRIP && marker.points.size() >= 2) {
             std::vector<ImVec2> screenPoints;
-            for(const auto& pt : marker.points) {
+            screenPoints.reserve(marker.points.size());
+            for (const auto& pt : marker.points) {
                 auto [wx, wy] = transformPoint(pt.x, pt.y, marker.frame_id);
                 screenPoints.push_back(worldToScreen((float)wx, (float)wy));
             }
-            ImU32 color = IM_COL32(marker.color.r, marker.color.g, marker.color.b, marker.color.a);
-            for(size_t i=0; i<screenPoints.size()-1; ++i) {
-                draw_list->AddLine(screenPoints[i], screenPoints[i+1], color, marker.scale.x * cam_zoom);
+
+            auto colorAt = [&](size_t idx) -> ImU32 {
+                if (!marker.colors.empty()) {
+                    const auto& c = marker.colors[std::min(idx, marker.colors.size() - 1)];
+                    return IM_COL32(c.r, c.g, c.b, c.a);
+                }
+                return IM_COL32(marker.color.r, marker.color.g, marker.color.b, marker.color.a);
+            };
+
+            const float lineWidth = marker.scale.x * cam_zoom;
+            for (size_t i = 0; i + 1 < screenPoints.size(); ++i) {
+                ImU32 segColor = colorAt(i);
+                draw_list->AddLine(screenPoints[i], screenPoints[i + 1], segColor, lineWidth);
             }
         }
     }

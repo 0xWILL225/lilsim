@@ -6,6 +6,7 @@
 #include <cstring>
 #include <unordered_set>
 #include <limits>
+#include <sstream>
 
 #include <spdlog/spdlog.h>
 #include <yaml-cpp/yaml.h>
@@ -18,6 +19,8 @@
 namespace sim {
 
 namespace {
+
+constexpr uint32_t kProtocolVersion = 1;
 
 /**
  * @brief Load and parse a metadata profile from a YAML file.
@@ -94,6 +97,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
 
 Simulator::Simulator(scene::SceneDB& db)
   : m_db(db) {
+  ensureCommServer();
 }
 
 Simulator::~Simulator() {
@@ -122,6 +126,10 @@ bool Simulator::isSyncClientConnected() const {
   return m_commServer && m_commServer->isSyncClientConnected();
 }
 
+std::shared_ptr<zmq::context_t> Simulator::getCommContext() const {
+  return m_commServer ? m_commServer->getContext() : nullptr;
+}
+
 void Simulator::probeConnection() {
   if (m_commServer && m_commEnabled.load(std::memory_order_relaxed) && 
       m_syncMode.load(std::memory_order_relaxed)) {
@@ -130,18 +138,13 @@ void Simulator::probeConnection() {
 }
 
 void Simulator::setCommEnable(bool enable) {
-  if (enable && !m_commEnabled.load(std::memory_order_relaxed)) {
-    if (!m_commServer) {
-      m_commServer = std::make_unique<comm::CommServer>();
-    }
-    if (m_commServer->start()) {
+  if (enable) {
+    ensureCommServer();
+    if (m_commServer && m_commServer->isRunning()) {
       m_commEnabled.store(true, std::memory_order_relaxed);
-      m_syncMode.store(false, std::memory_order_relaxed);
       spdlog::info("[sim] Communication enabled");
-    } else {
-      spdlog::error("[sim] Failed to start communication server");
     }
-  } else if (!enable && m_commEnabled.load(std::memory_order_relaxed)) {
+  } else {
     if (m_commServer) {
       m_commServer->stop();
     }
@@ -150,8 +153,57 @@ void Simulator::setCommEnable(bool enable) {
   }
 }
 
+void Simulator::ensureCommServer() {
+  if (m_commServer && m_commServer->isRunning()) {
+    return;
+  }
+  if (!m_commServer) {
+    m_commServer = std::make_unique<comm::CommServer>();
+  }
+  if (!m_commServer->start()) {
+    spdlog::error("[sim] Failed to start communication server");
+    m_commEnabled.store(false, std::memory_order_relaxed);
+  } else {
+    m_commEnabled.store(true, std::memory_order_relaxed);
+  }
+}
+
+namespace {
+constexpr double kMinDt = 0.001;
+constexpr double kMaxDt = 1.0;
+constexpr double kMinRunSpeed = 0.1;
+constexpr double kMaxRunSpeed = 10.0;
+}
+
 double Simulator::getDt() const {
-    return common::CarDefaults::dt;
+    return m_dt.load(std::memory_order_relaxed);
+}
+
+double Simulator::getRequestedDt() const {
+    std::lock_guard<std::mutex> lock(m_dtMutex);
+    if (m_pendingDt.has_value()) {
+        return *m_pendingDt;
+    }
+    return m_dt.load(std::memory_order_relaxed);
+}
+
+void Simulator::requestDt(double dtSeconds) {
+    double clamped = std::clamp(dtSeconds, kMinDt, kMaxDt);
+    {
+        std::lock_guard<std::mutex> lock(m_dtMutex);
+        m_pendingDt = clamped;
+    }
+    spdlog::info("[sim] Requested timestep change to {:.4f}s (applies on reset)", clamped);
+}
+
+void Simulator::setRunSpeed(double multiplier) {
+    double clamped = std::clamp(multiplier, kMinRunSpeed, kMaxRunSpeed);
+    m_runSpeed.store(clamped, std::memory_order_relaxed);
+    spdlog::info("[sim] Updated simulation run speed to {:.2f}x", clamped);
+}
+
+double Simulator::getRunSpeed() const {
+    return m_runSpeed.load(std::memory_order_relaxed);
 }
 
 std::vector<Simulator::ModelInfo> Simulator::getAvailableModels() {
@@ -238,7 +290,7 @@ bool Simulator::loadModel(const std::string& modelPath) {
     updateDescriptorViewLocked(desc);
     m_pendingParamsDirty.store(true, std::memory_order_relaxed);
     m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
-    // m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
+    broadcastMetadata(desc, "model load");
 
     spdlog::info("[sim] Loaded model: {}", m_currentModelName);
     return true;
@@ -260,15 +312,11 @@ const CarModelDescriptor* Simulator::getCurrentModelDescriptor() const {
 }
 
 void Simulator::setParam(size_t index, double value) {
-    std::lock_guard<std::mutex> lock(m_paramMutex);
-    m_pendingParamUpdates.push_back({index, value});
-    m_pendingParamsDirty.store(true, std::memory_order_relaxed);
+    stageParamUpdate(index, value);
 }
 
 void Simulator::setSetting(size_t index, int32_t value) {
-    std::lock_guard<std::mutex> lock(m_paramMutex);
-    m_pendingSettingUpdates.push_back({index, value});
-    m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
+    stageSettingUpdate(index, value);
 }
 
 /**
@@ -472,6 +520,399 @@ void Simulator::refreshDescriptorView() {
         ? m_modelLoader->get_descriptor(m_carModel)
         : nullptr;
     updateDescriptorViewLocked(desc);
+}
+
+void Simulator::stageParamUpdate(size_t index, double value) {
+    std::lock_guard<std::mutex> lock(m_paramMutex);
+    m_pendingParamUpdates.push_back({index, value});
+    m_pendingParamsDirty.store(true, std::memory_order_relaxed);
+}
+
+void Simulator::stageSettingUpdate(size_t index, int32_t value) {
+    std::lock_guard<std::mutex> lock(m_paramMutex);
+    m_pendingSettingUpdates.push_back({index, value});
+    m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
+}
+
+void Simulator::publishStateUpdate(const CarModelDescriptor* desc,
+                                   const scene::Scene& snapshot,
+                                   uint64_t tick,
+                                   double simTime) {
+    if (!desc || !m_commServer || !m_commServer->isRunning()) {
+        return;
+    }
+
+    lilsim::StateUpdate update;
+    auto* sceneMsg = update.mutable_scene();
+    auto* header = sceneMsg->mutable_header();
+    header->set_tick(tick);
+    header->set_sim_time(simTime);
+    header->set_version(kProtocolVersion);
+    sceneMsg->set_metadata_version(m_metadataVersion.load(std::memory_order_relaxed));
+
+    auto assignValues = [](const std::vector<double>& source,
+                           const double* fallback,
+                           size_t count,
+                           google::protobuf::RepeatedField<double>* dest) {
+        if (source.size() == count) {
+            dest->Assign(source.begin(), source.end());
+        } else if (fallback && count > 0) {
+            dest->Resize(static_cast<int>(count), 0.0);
+            for (size_t i = 0; i < count; ++i) {
+                (*dest)[static_cast<int>(i)] = fallback[i];
+            }
+        }
+    };
+
+    assignValues(snapshot.car_state_values, desc->state_values, desc->num_states, sceneMsg->mutable_state_values());
+    assignValues(snapshot.car_input_values, desc->input_values, desc->num_inputs, sceneMsg->mutable_input_values());
+
+    auto* params = sceneMsg->mutable_param_values();
+    if (desc->param_values && desc->num_params > 0) {
+        params->Resize(static_cast<int>(desc->num_params), 0.0);
+        for (size_t i = 0; i < desc->num_params; ++i) {
+            (*params)[static_cast<int>(i)] = desc->param_values[i];
+        }
+    }
+
+    auto* settings = sceneMsg->mutable_setting_values();
+    if (desc->setting_values && desc->num_settings > 0) {
+        settings->Resize(static_cast<int>(desc->num_settings), 0);
+        for (size_t i = 0; i < desc->num_settings; ++i) {
+            (*settings)[static_cast<int>(i)] = desc->setting_values[i];
+        }
+    }
+
+    m_commServer->publishState(update);
+}
+
+void Simulator::broadcastMetadata(const CarModelDescriptor* desc, const char* reason) {
+    if (!desc) {
+        return;
+    }
+    lilsim::ModelMetadata metadata = buildModelMetadata(desc);
+    {
+        std::lock_guard<std::mutex> lock(m_metadataMutex);
+        m_cachedMetadata = metadata;
+        m_metadataDirty = false;
+    }
+    if (m_commServer && m_commServer->isRunning()) {
+        m_commServer->publishMetadata(metadata);
+    }
+    if (reason) {
+        spdlog::info("[sim] Broadcast metadata v{} after {}", metadata.schema_version(), reason);
+    }
+}
+
+lilsim::ModelMetadata Simulator::buildModelMetadata(const CarModelDescriptor* desc) {
+    lilsim::ModelMetadata metadata;
+    if (!desc) {
+        return metadata;
+    }
+
+    double simTime = m_db.tick.load(std::memory_order_relaxed) * getDt();
+    auto* header = metadata.mutable_header();
+    header->set_version(kProtocolVersion);
+    header->set_tick(m_db.tick.load(std::memory_order_relaxed));
+    header->set_sim_time(simTime);
+
+    metadata.set_model_name(m_currentModelName);
+    uint64_t version = m_metadataVersion.fetch_add(1, std::memory_order_relaxed) + 1;
+    metadata.set_schema_version(version);
+
+    auto* params = metadata.mutable_params();
+    for (size_t i = 0; i < desc->num_params; ++i) {
+        auto* meta = params->Add();
+        meta->set_name(desc->param_names ? desc->param_names[i] : "");
+        meta->set_default_value(desc->param_values ? desc->param_values[i] : 0.0);
+        if (desc->param_min && desc->param_max) {
+            meta->mutable_limits()->set_min(desc->param_min[i]);
+            meta->mutable_limits()->set_max(desc->param_max[i]);
+        }
+    }
+
+    auto* settings = metadata.mutable_settings();
+    for (size_t i = 0; i < desc->num_settings; ++i) {
+        auto* meta = settings->Add();
+        meta->set_name(desc->setting_names ? desc->setting_names[i] : "");
+        meta->set_default_index(desc->setting_values ? desc->setting_values[i] : 0);
+        if (desc->setting_option_names && desc->setting_option_setting_index) {
+            for (size_t opt = 0; opt < desc->num_setting_options; ++opt) {
+                if (desc->setting_option_setting_index[opt] == static_cast<int32_t>(i)) {
+                    meta->add_options(desc->setting_option_names[opt]
+                                          ? desc->setting_option_names[opt]
+                                          : "");
+                }
+            }
+        }
+    }
+
+    auto* inputs = metadata.mutable_inputs();
+    for (size_t i = 0; i < desc->num_inputs; ++i) {
+        auto* meta = inputs->Add();
+        meta->set_name(desc->input_names ? desc->input_names[i] : "");
+        if (desc->input_min && desc->input_max) {
+            meta->mutable_limits()->set_min(desc->input_min[i]);
+            meta->mutable_limits()->set_max(desc->input_max[i]);
+        }
+    }
+
+    auto* states = metadata.mutable_states();
+    for (size_t i = 0; i < desc->num_states; ++i) {
+        auto* meta = states->Add();
+        meta->set_name(desc->state_names ? desc->state_names[i] : "");
+        if (desc->state_min && desc->state_max) {
+            meta->mutable_limits()->set_min(desc->state_min[i]);
+            meta->mutable_limits()->set_max(desc->state_max[i]);
+        }
+    }
+
+    return metadata;
+}
+
+void Simulator::handleAdminCommands(const CarModelDescriptor* descHint, double dt) {
+    if (!m_commServer || !m_commServer->isRunning()) {
+        return;
+    }
+    while (auto cmd = m_commServer->pollAdminCommand()) {
+        lilsim::AdminReply reply;
+        auto* header = reply.mutable_header();
+        header->set_version(kProtocolVersion);
+        uint64_t tick = m_db.tick.load(std::memory_order_relaxed);
+        header->set_tick(tick);
+        header->set_sim_time(tick * dt);
+
+        bool success = handleAdminCommand(*cmd, descHint, reply, dt);
+        reply.set_success(success);
+        if (!reply.success() && reply.message().empty()) {
+            reply.set_message("Command failed");
+        }
+
+        m_commServer->replyAdmin(reply);
+    }
+}
+
+bool Simulator::handleAdminCommand(const lilsim::AdminCommand& cmd,
+                                   const CarModelDescriptor* descHint,
+                                   lilsim::AdminReply& reply,
+                                   double dt) {
+    (void)dt;
+    switch (cmd.type()) {
+        case lilsim::AdminCommandType::INIT:
+        case lilsim::AdminCommandType::RESET:
+            reset();
+            reply.set_message("Reset requested");
+            return true;
+        case lilsim::AdminCommandType::PAUSE:
+            pause();
+            reply.set_message("Paused");
+            return true;
+        case lilsim::AdminCommandType::RUN:
+            resume();
+            reply.set_message("Running");
+            return true;
+        case lilsim::AdminCommandType::STEP: {
+            uint64_t steps = cmd.step_count() > 0 ? cmd.step_count() : 1;
+            step(steps);
+            reply.set_message("Step queued");
+            return true;
+        }
+        case lilsim::AdminCommandType::SET_PARAMS: {
+            for (const auto& update : cmd.param_updates()) {
+                stageParamUpdate(update.index(), update.value());
+            }
+            reply.set_message("Parameter overrides staged");
+            return true;
+        }
+        case lilsim::AdminCommandType::SET_SETTINGS: {
+            for (const auto& update : cmd.setting_updates()) {
+                stageSettingUpdate(update.index(), update.value());
+            }
+            reply.set_message("Setting overrides staged");
+            return true;
+        }
+        case lilsim::AdminCommandType::SET_CONTROL_MODE: {
+            m_syncMode.store(cmd.sync_mode(), std::memory_order_relaxed);
+            if (cmd.control_period_ms() > 0) {
+                setControlPeriodMs(cmd.control_period_ms());
+            }
+            if (cmd.has_use_external_control()) {
+                m_externalControlEnabled.store(cmd.use_external_control(), std::memory_order_relaxed);
+            }
+            std::ostringstream oss;
+            oss << (m_syncMode.load(std::memory_order_relaxed) ? "Sync" : "Async")
+                << " mode, source="
+                << (m_externalControlEnabled.load(std::memory_order_relaxed) ? "ZeroMQ client" : "GUI");
+            reply.set_message(oss.str());
+            return true;
+        }
+        case lilsim::AdminCommandType::SET_TRACK: {
+            if (cmd.track_path().empty()) {
+                reply.set_message("Track path missing");
+                return false;
+            }
+            scene::TrackData trackData;
+            if (!scene::TrackLoader::loadFromCSV(cmd.track_path(), trackData)) {
+                reply.set_message("Failed to load track");
+                return false;
+            }
+            setCones(trackData.cones);
+            if (trackData.startPose.has_value()) {
+                setStartPose(trackData.startPose.value());
+            }
+            reply.set_message("Track loaded");
+            return true;
+        }
+        case lilsim::AdminCommandType::LOAD_PARAM_PROFILE: {
+            if (cmd.param_profile_path().empty()) {
+                reply.set_message("Profile path missing");
+                return false;
+            }
+            setParamProfileFile(cmd.param_profile_path());
+            reply.set_message("Profile staged");
+            return true;
+        }
+        case lilsim::AdminCommandType::CLEAR_PARAM_PROFILE:
+            clearParamProfile();
+            reply.set_message("Profile cleared");
+            return true;
+        case lilsim::AdminCommandType::GET_METADATA: {
+            const CarModelDescriptor* desc = descHint;
+            if (!desc) {
+                std::lock_guard<std::mutex> lock(m_dataMutex);
+                desc = (m_modelLoader && m_carModel)
+                         ? m_modelLoader->get_descriptor(m_carModel)
+                         : nullptr;
+            }
+            if (!desc) {
+                reply.set_message("No model loaded");
+                return false;
+            }
+            {
+                std::lock_guard<std::mutex> lock(m_metadataMutex);
+                if (m_metadataDirty) {
+                    auto metadata = buildModelMetadata(desc);
+                    m_cachedMetadata = metadata;
+                    m_metadataDirty = false;
+                }
+                reply.mutable_metadata()->CopyFrom(m_cachedMetadata);
+            }
+            reply.set_message("Metadata attached");
+            return true;
+        }
+        case lilsim::AdminCommandType::SET_SIM_CONFIG: {
+            bool applied = false;
+            if (cmd.has_timestep()) {
+                requestDt(cmd.timestep());
+                applied = true;
+            }
+            if (cmd.has_run_speed()) {
+                setRunSpeed(cmd.run_speed());
+                applied = true;
+            }
+            if (!applied) {
+                reply.set_message("No simulation config fields provided");
+                return false;
+            }
+            reply.set_timestep(getRequestedDt());
+            reply.set_run_speed(getRunSpeed());
+            reply.set_message("Simulation config updated");
+            return true;
+        }
+        case lilsim::AdminCommandType::GET_SIM_CONFIG: {
+            reply.set_timestep(getRequestedDt());
+            reply.set_run_speed(getRunSpeed());
+            reply.set_message("Simulation config attached");
+            return true;
+        }
+        default:
+            reply.set_message("Unsupported admin command");
+            return false;
+    }
+}
+
+void Simulator::applyAsyncControl(const lilsim::ControlAsync& control,
+                                  const CarModelDescriptor* desc) {
+    if (!desc) {
+        return;
+    }
+    if (control.metadata_version() != m_metadataVersion.load(std::memory_order_relaxed)) {
+        spdlog::warn("[sim] Dropping async control (metadata version mismatch)");
+        return;
+    }
+    if (static_cast<size_t>(control.input_values_size()) != desc->num_inputs) {
+        spdlog::warn("[sim] Dropping async control (input size mismatch)");
+        return;
+    }
+    std::lock_guard<std::mutex> inputLock(m_inputMutex);
+    m_newInput.resize(desc->num_inputs);
+    for (size_t i = 0; i < desc->num_inputs; ++i) {
+        m_newInput[i] = control.input_values(static_cast<int>(i));
+    }
+    m_inputUpdateRequested.store(true, std::memory_order_relaxed);
+}
+
+bool Simulator::requestSyncControl(const CarModelDescriptor* desc,
+                                   double simTime,
+                                   uint64_t tick) {
+    if (!desc || !m_commServer || !m_commServer->isRunning()) {
+        return false;
+    }
+    lilsim::ControlRequest request;
+    auto* header = request.mutable_header();
+    header->set_tick(tick);
+    header->set_sim_time(simTime);
+    header->set_version(kProtocolVersion);
+
+    auto* sceneMsg = request.mutable_scene();
+    auto* sceneHeader = sceneMsg->mutable_header();
+    sceneHeader->set_tick(tick);
+    sceneHeader->set_sim_time(simTime);
+    sceneHeader->set_version(kProtocolVersion);
+    sceneMsg->set_metadata_version(m_metadataVersion.load(std::memory_order_relaxed));
+
+    if (desc->state_values && desc->num_states > 0) {
+        sceneMsg->mutable_state_values()->Resize(static_cast<int>(desc->num_states), 0.0);
+        for (size_t i = 0; i < desc->num_states; ++i) {
+            (*sceneMsg->mutable_state_values())[static_cast<int>(i)] = desc->state_values[i];
+        }
+    }
+    if (desc->input_values && desc->num_inputs > 0) {
+        sceneMsg->mutable_input_values()->Resize(static_cast<int>(desc->num_inputs), 0.0);
+        for (size_t i = 0; i < desc->num_inputs; ++i) {
+            (*sceneMsg->mutable_input_values())[static_cast<int>(i)] = desc->input_values[i];
+        }
+    }
+    if (desc->param_values && desc->num_params > 0) {
+        sceneMsg->mutable_param_values()->Resize(static_cast<int>(desc->num_params), 0.0);
+        for (size_t i = 0; i < desc->num_params; ++i) {
+            (*sceneMsg->mutable_param_values())[static_cast<int>(i)] = desc->param_values[i];
+        }
+    }
+    if (desc->setting_values && desc->num_settings > 0) {
+        sceneMsg->mutable_setting_values()->Resize(static_cast<int>(desc->num_settings), 0);
+        for (size_t i = 0; i < desc->num_settings; ++i) {
+            (*sceneMsg->mutable_setting_values())[static_cast<int>(i)] = desc->setting_values[i];
+        }
+    }
+
+    lilsim::ControlReply reply;
+    if (!m_commServer->requestControl(request, reply, static_cast<int>(m_controlPeriodMs.load(std::memory_order_relaxed)))) {
+        spdlog::warn("[sim] Timed out waiting for sync control reply");
+        return false;
+    }
+    if (reply.metadata_version() != m_metadataVersion.load(std::memory_order_relaxed)) {
+        spdlog::warn("[sim] Sync control reply metadata mismatch");
+        return false;
+    }
+    if (static_cast<size_t>(reply.input_values_size()) != desc->num_inputs) {
+        spdlog::warn("[sim] Sync control reply input size mismatch");
+        return false;
+    }
+    for (size_t i = 0; i < desc->num_inputs; ++i) {
+        desc->input_values[i] = reply.input_values(static_cast<int>(i));
+    }
+    return true;
 }
 
 /**
@@ -692,7 +1133,6 @@ void Simulator::applyProfileRuntimeEffects(const CarModelDescriptor& desc,
 }
 
 void Simulator::loop() {
-  double dt = getDt(); 
   using clock = std::chrono::steady_clock;
   auto next = clock::now();
   uint64_t tick = 0;
@@ -707,6 +1147,13 @@ void Simulator::loop() {
   }
 
   while (m_running.load(std::memory_order_relaxed)) {
+    if (m_commServer && m_commServer->isRunning()) {
+      handleAdminCommands(nullptr, getDt());
+    }
+
+    double dt = getDt();
+    double runSpeed = std::max(kMinRunSpeed, getRunSpeed());
+
     std::unique_lock<std::mutex> lock(m_dataMutex);
     
     if (!m_carModel || !m_modelLoader) {
@@ -724,6 +1171,17 @@ void Simulator::loop() {
 
     if (m_startPoseUpdateRequested.exchange(false, std::memory_order_relaxed)) {
       m_startPose = m_newStartPose;
+    }
+
+    bool externalControlActive = m_externalControlEnabled.load(std::memory_order_relaxed);
+    bool syncMode = m_syncMode.load(std::memory_order_relaxed);
+
+    if (externalControlActive &&
+        m_commServer && m_commEnabled.load(std::memory_order_relaxed) &&
+        !syncMode) {
+      if (auto asyncControl = m_commServer->pollAsyncControl()) {
+        applyAsyncControl(*asyncControl, desc);
+      }
     }
     
     if (m_inputUpdateRequested.exchange(false, std::memory_order_relaxed)) {
@@ -790,6 +1248,17 @@ void Simulator::loop() {
             profileToApply = m_activeProfile;
         }
 
+        {
+            std::lock_guard<std::mutex> dtLock(m_dtMutex);
+            if (m_pendingDt.has_value()) {
+                double clamped = std::clamp(*m_pendingDt, kMinDt, kMaxDt);
+                m_dt.store(clamped, std::memory_order_relaxed);
+                spdlog::info("[sim] Applied timestep {:.4f}s on reset.", clamped);
+                m_pendingDt.reset();
+            }
+        }
+        double dt = getDt();
+
         restoreBaseMetadata(desc);
         if (profileToApply) {
             applyProfileMetadata(desc, *profileToApply);
@@ -807,6 +1276,7 @@ void Simulator::loop() {
         updateDescriptorViewLocked(desc);
         m_pendingParamsDirty.store(true, std::memory_order_relaxed);
         m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
+        broadcastMetadata(desc, "reset");
         
         m_state.car_state_values.assign(desc->state_values, desc->state_values + desc->num_states);
         m_state.car_input_values.assign(desc->input_values, desc->input_values + desc->num_inputs);
@@ -814,6 +1284,9 @@ void Simulator::loop() {
         tick = 0;
         m_db.tick.store(tick, std::memory_order_relaxed);
         m_db.publish(m_state);
+        if (m_commServer && m_commServer->isRunning()) {
+            publishStateUpdate(desc, m_state, tick, 0.0);
+        }
         m_paused.store(true, std::memory_order_relaxed);
         
         lock.unlock();
@@ -841,6 +1314,12 @@ void Simulator::loop() {
       }
     }
 
+    if (externalControlActive &&
+        m_commServer && m_commEnabled.load(std::memory_order_relaxed) &&
+        syncMode) {
+      requestSyncControl(desc, tick * dt, tick);
+    }
+
     m_modelLoader->step(m_carModel, dt);
 
     m_state.car_state_values.assign(desc->state_values, desc->state_values + desc->num_states);
@@ -850,11 +1329,14 @@ void Simulator::loop() {
     m_db.tick.store(tick, std::memory_order_relaxed);
 
     m_db.publish(m_state);
+    if (m_commServer && m_commServer->isRunning()) {
+      publishStateUpdate(desc, m_state, tick, tick * dt);
+    }
     
     lock.unlock();
 
     next += std::chrono::duration_cast<clock::duration>(
-      std::chrono::duration<double>(dt));
+      std::chrono::duration<double>(dt / runSpeed));
     std::this_thread::sleep_until(next);
   }
 }

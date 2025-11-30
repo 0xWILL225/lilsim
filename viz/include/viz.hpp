@@ -14,6 +14,8 @@
 #include <webgpu/webgpu.h>
 #include <vector>
 #include <chrono>
+#include <functional>
+#include <memory>
 
 #include "CarDefaults.hpp"
 #include "MarkerSystem.hpp"
@@ -21,10 +23,11 @@
 #include "panels/ViewportPanel.hpp"
 #include "scene.hpp"
 #include "simulator.hpp"
+#include "comm/CommServer.hpp"
+#include "comm/endpoints.hpp"
+#include "messages.pb.h"
 
-namespace comm {
-  class MarkerSubscriber;
-}
+#include <zmq.hpp>
 
 namespace viz {
 
@@ -119,6 +122,29 @@ private:
   void refreshAvailableModels();
   void onModelChanged(); 
   void syncParamProfileBuffer();
+  bool initZmqInterface();
+  bool sendAdminCommand(::lilsim::AdminCommandType type,
+                        const std::function<void(::lilsim::AdminCommand&)>& builder = {},
+                        ::lilsim::AdminReply* out = nullptr);
+  void pollMetadataUpdates();
+  void handleMetadataMessage(const ::lilsim::ModelMetadata& msg);
+  bool requestMetadataSnapshot();
+  bool stageParamUpdate(size_t index, double value);
+  bool stageSettingUpdate(size_t index, int32_t value);
+  bool sendSetTrackCommand(const std::string& path);
+  bool sendProfileCommand(::lilsim::AdminCommandType type, const std::string& path = {});
+  bool sendSetModeCommand(bool sync, bool externalControl);
+  void sendGuiControlInputs(const std::vector<double>& inputs);
+  void pollMarkerMessages();
+
+  std::shared_ptr<zmq::context_t> m_zmqContext;
+  std::unique_ptr<zmq::socket_t> m_adminSocket;
+  std::unique_ptr<zmq::socket_t> m_controlPub;
+  std::unique_ptr<zmq::socket_t> m_metadataSub;
+  bool m_guiControlSource{true};
+  uint64_t m_metadataVersion{0};
+  ::lilsim::ModelMetadata m_lastMetadata;
+  std::unique_ptr<comm::MarkerSubscriber> m_markerSub;
 };
 
 } // namespace viz

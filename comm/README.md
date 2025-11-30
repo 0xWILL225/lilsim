@@ -50,7 +50,7 @@ All messages use Protocol Buffers (see `messages.proto`). Key types:
 - **ControlAsync**: Steering angle (rad) and longitudinal acceleration (m/s²) for async mode
 - **ControlRequest**: Includes current state and simulation tick (sync mode)
 - **ControlReply**: Steering angle (rad) and longitudinal acceleration (m/s²) (sync mode)
-- **AdminCommand**: Commands like PAUSE, RUN, STEP, RESET, SET_PARAMS, SET_MODE
+- **AdminCommand**: Commands like PAUSE, RUN, STEP, RESET, SET_PARAMS, SET_CONTROL_MODE, SET_SIM_CONFIG, GET_SIM_CONFIG
 - **MarkerArray**: Visualization markers (lines, circles, etc.) with TTL support
 
 ### Client Example (Python)

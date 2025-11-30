@@ -12,6 +12,7 @@ from .messages_pb2 import (
     AdminReply,
     MarkerArray,
     Marker,
+    ModelMetadata,
 )
 
 __version__ = "0.1.0"
@@ -27,5 +28,6 @@ __all__ = [
     "AdminReply",
     "MarkerArray",
     "Marker",
+    "ModelMetadata",
 ]
 

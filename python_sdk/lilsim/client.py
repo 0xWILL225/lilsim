@@ -1,11 +1,12 @@
 """Main client class for interacting with lilsim simulator."""
 
-import zmq
+import logging
 import time
 import threading
-from typing import Optional, Callable, Dict, Any
-import logging
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence
+
 import numpy as np
+import zmq
 
 from . import messages_pb2
 
@@ -14,39 +15,10 @@ logger = logging.getLogger(__name__)
 
 
 class LilsimClient:
-    """Client for interacting with the lilsim simulator via ZeroMQ.
-    
-    This client provides interfaces for:
-    - Subscribing to state updates
-    - Sending control commands (async mode)
-    - Responding to control requests (sync mode)
-    - Sending admin commands
-    - Publishing visualization markers
-    
-    Example usage:
-        client = LilsimClient()
-        client.connect()
-        
-        # Subscribe to state updates
-        client.subscribe_state(lambda state: print(f"Car at {state.scene.car.pos.x}"))
-        
-        # Send async control
-        client.send_control_async(steer_angle=0.1, ax=2.0)
-        
-        # Or register sync control callback
-        def my_controller(request):
-            return (0.1, 0.0, 2.0)  # (steer_angle, steer_rate, ax)
-        client.register_sync_controller(my_controller)
-        
-        client.start()  # Start background threads
-    """
+    """ZeroMQ client that mirrors the simulator's metadata-driven API."""
     
     def __init__(self, host: str = "localhost"):
-        """Initialize the client.
-        
-        Args:
-            host: Hostname/IP of the simulator (default: localhost)
-        """
+        """Initialize sockets and metadata caches."""
         self.host = host
         self.context = zmq.Context()
         
@@ -56,6 +28,15 @@ class LilsimClient:
         self.control_async_pub: Optional[zmq.Socket] = None
         self.admin_req: Optional[zmq.Socket] = None
         self.marker_pub: Optional[zmq.Socket] = None
+        
+        # Metadata caches
+        self.metadata: Optional[messages_pb2.ModelMetadata] = None
+        self.metadata_version: int = 0
+        self.param_name_to_index: Dict[str, int] = {}
+        self.setting_name_to_index: Dict[str, int] = {}
+        self.input_name_to_index: Dict[str, int] = {}
+        self._zero_input_vector: list[float] = []
+        self.last_control_vector: list[float] = []
         
         # State management
         self.latest_state: Optional[messages_pb2.StateUpdate] = None
@@ -67,8 +48,8 @@ class LilsimClient:
         self.state_thread: Optional[threading.Thread] = None
         self.control_thread: Optional[threading.Thread] = None
         
-        # Last control for async mode
-        self.last_control = (0.0, 0.0, 0.0)  # (steer_angle, steer_rate, ax)
+        # Last control for sync fallback
+        self.last_control = (0.0, 0.0, 0.0)
         
     def connect(self):
         """Connect to all simulator endpoints."""
@@ -97,6 +78,20 @@ class LilsimClient:
         
         # Give ZMQ time to establish connections (critical for PUB/SUB)
         time.sleep(0.5)
+        
+    def refresh_metadata(self) -> messages_pb2.ModelMetadata:
+        """Fetch the latest ModelMetadata via GET_METADATA."""
+        reply = self._send_admin_command(messages_pb2.GET_METADATA)
+        if not reply.success or not reply.HasField("metadata"):
+            raise RuntimeError(f"Failed to fetch metadata: {reply.message}")
+        self._apply_metadata(reply.metadata)
+        return self.metadata
+    
+    def get_metadata(self, refresh: bool = False) -> Optional[messages_pb2.ModelMetadata]:
+        """Return cached metadata (optionally refreshing first)."""
+        if refresh or self.metadata is None:
+            self.refresh_metadata()
+        return self.metadata
         
     def connect_control_sync(self):
         """Connect to synchronous control endpoint (DEALER socket).
@@ -133,47 +128,66 @@ class LilsimClient:
         self.state_callbacks.append(callback)
         logger.info(f"Registered state callback: {callback.__name__}")
         
-    def register_sync_controller(self, controller: Callable[[messages_pb2.ControlRequest], tuple[float, float, float]]):
-        """Register a controller for synchronous mode.
+    def register_sync_controller(
+        self,
+        controller: Callable[[messages_pb2.ControlRequest, Dict[str, float]], Mapping[str, float] | Sequence[float]],
+    ) -> None:
+        """Register a synchronous controller callback.
         
-        Args:
-            controller: Function that takes ControlRequest and returns (steer_angle, steer_rate, ax)
-                       The simulator will use the appropriate steering input based on its current mode
+        The callback receives the raw ``ControlRequest`` message and a convenience
+        dictionary produced by :meth:`decode_scene_state`. It must return either:
+
+        - A mapping of ``input_name -> value``
+        - A full input vector ordered exactly like ``ModelMetadata.inputs``
+        - A legacy ``(steer_angle, steer_rate, ax)`` tuple
         """
         self.sync_controller = controller
-        logger.info(f"Registered sync controller: {controller.__name__}")
+        logger.info("Registered sync controller: %s", getattr(controller, "__name__", repr(controller)))
         
         # Ensure control sync socket is connected
         if self.control_dealer is None:
             self.connect_control_sync()
             
-    def send_control_async(self, steer_angle: float = 0.0, steer_rate: float = 0.0, ax: float = 0.0):
-        """Send control command for async mode.
-        
-        The simulator must be in async mode for this to take effect.
-        Controls are published on the async control socket (port 5559).
-        The simulator will use either steer_angle or steer_rate based on its current mode.
+    def send_control_async(
+        self,
+        overrides: Optional[Mapping[str, float]] = None,
+        **legacy_inputs: float,
+    ) -> None:
+        """Publish asynchronous control values by input name.
         
         Args:
-            steer_angle: Steering angle in radians (used in Angle mode)
-            steer_rate: Steering rate in rad/s (used in Rate mode)
-            ax: Longitudinal acceleration in m/s^2
+            overrides: Mapping of input name -> value.
+            **legacy_inputs: Optional steer_angle/steer_rate/ax convenience kwargs.
         """
+        payload: Dict[str, float] = {}
+        if overrides:
+            payload.update(overrides)
+        payload.update(self._legacy_control_args(**legacy_inputs))
+        if not payload:
+            raise ValueError("At least one control input must be provided.")
+        self.send_control_async_named(payload)
+    
+    def send_control_async_named(self, inputs: Mapping[str, float]) -> None:
+        """Publish asynchronous control values using a name/value mapping."""
+        vector = self._build_input_vector(inputs)
+        self.send_control_async_vector(vector)
+    
+    def send_control_async_vector(self, values: Sequence[float]) -> None:
+        """Publish an already ordered control vector matching metadata."""
+        self._ensure_metadata()
         if self.control_async_pub is None:
             logger.error("Async control socket not connected. Call connect() first.")
             return
-            
-        # Create and send control message
-        control = messages_pb2.ControlAsync()
-        control.header.version = 1
-        control.steer_angle = steer_angle
-        control.steer_rate = steer_rate
-        control.ax = ax
-        
-        self.control_async_pub.send(control.SerializeToString())
-        
-        # Also store for sync mode fallback
-        self.last_control = (steer_angle, steer_rate, ax)
+        if len(values) != len(self._zero_input_vector):
+            raise ValueError("Control vector length does not match metadata inputs.")
+
+        msg = messages_pb2.ControlAsync()
+        msg.header.version = 1
+        msg.metadata_version = self.metadata_version
+        msg.input_values.extend(float(v) for v in values)
+
+        self.control_async_pub.send(msg.SerializeToString())
+        self.last_control_vector = [float(v) for v in values]
         
     def _state_listener_thread(self):
         """Background thread that listens for state updates."""
@@ -208,45 +222,51 @@ class LilsimClient:
         
         while self.running:
             try:
-                # Non-blocking poll with timeout
-                if self.control_dealer.poll(timeout=100):  # 100ms timeout
-                    msg_bytes = self.control_dealer.recv()
-                    control_request = messages_pb2.ControlRequest()
-                    control_request.ParseFromString(msg_bytes)
-                    
-                    # Handle heartbeat probes (tick=0) - just respond immediately
-                    if control_request.header.tick == 0:
-                        reply = messages_pb2.ControlReply()
-                        reply.header.tick = 0
-                        reply.header.sim_time = 0.0
-                        reply.header.version = 1
-                        reply.steer_angle = 0.0
-                        reply.steer_rate = 0.0
-                        reply.ax = 0.0
-                        self.control_dealer.send(reply.SerializeToString())
-                        continue
-                    
-                    # Get control from controller or use last control
-                    if self.sync_controller is not None:
-                        try:
-                            steer_angle, steer_rate, ax = self.sync_controller(control_request)
-                        except Exception as e:
-                            logger.error(f"Error in sync controller: {e}")
-                            steer_angle, steer_rate, ax = self.last_control
-                    else:
-                        steer_angle, steer_rate, ax = self.last_control
-                    
-                    # Send reply
-                    reply = messages_pb2.ControlReply()
-                    reply.header.tick = control_request.header.tick
-                    reply.header.sim_time = control_request.header.sim_time
-                    reply.header.version = 1
-                    reply.steer_angle = steer_angle
-                    reply.steer_rate = steer_rate
-                    reply.ax = ax
-                    
+                if not self.control_dealer.poll(timeout=100):
+                    continue
+                msg_bytes = self.control_dealer.recv()
+                control_request = messages_pb2.ControlRequest()
+                control_request.ParseFromString(msg_bytes)
+
+                scene_meta_version = control_request.scene.metadata_version
+                if scene_meta_version and scene_meta_version != self.metadata_version:
+                    try:
+                        self.refresh_metadata()
+                    except RuntimeError as exc:
+                        logger.warning("Failed to refresh metadata after mismatch: %s", exc)
+                version_for_reply = control_request.scene.metadata_version or self.metadata_version
+
+                reply = messages_pb2.ControlReply()
+                reply.header.CopyFrom(control_request.header)
+                reply.metadata_version = version_for_reply
+
+                # Heartbeat probe
+                if control_request.header.tick == 0:
+                    reply.input_values.extend(self._zero_input_vector)
                     self.control_dealer.send(reply.SerializeToString())
-                    
+                    continue
+
+                self._ensure_metadata()
+                vector: Optional[list[float]] = None
+                if self.sync_controller is not None:
+                    try:
+                        state_dict = self.decode_scene_state(control_request.scene)
+                        control_output = self.sync_controller(control_request, state_dict)
+                        vector = self._format_control_output(control_output)
+                    except Exception as exc:
+                        logger.error("Error in sync controller: %s", exc)
+                        vector = None
+
+                if vector is None:
+                    if not self.last_control_vector:
+                        self.last_control_vector = list(self._zero_input_vector)
+                    vector = list(self.last_control_vector)
+                else:
+                    self.last_control_vector = list(vector)
+
+                reply.input_values.extend(vector)
+                self.control_dealer.send(reply.SerializeToString())
+
             except Exception as e:
                 if self.running:
                     logger.error(f"Error in control responder: {e}")
@@ -316,16 +336,13 @@ class LilsimClient:
         
     # ========== Admin Commands ==========
     
-    def _send_admin_command(self, cmd_type: messages_pb2.AdminCommandType, **kwargs) -> messages_pb2.AdminReply:
-        """Send an admin command and wait for reply.
-        
-        Args:
-            cmd_type: Type of admin command
-            **kwargs: Additional fields for the command
-            
-        Returns:
-            AdminReply message
-        """
+    def _send_admin_command(
+        self,
+        cmd_type: messages_pb2.AdminCommandType,
+        builder: Optional[Callable[[messages_pb2.AdminCommand], None]] = None,
+        **kwargs,
+    ) -> messages_pb2.AdminReply:
+        """Send an admin command and wait for the reply."""
         cmd = messages_pb2.AdminCommand()
         cmd.header.version = 1
         cmd.type = cmd_type
@@ -337,10 +354,10 @@ class LilsimClient:
             cmd.sync_mode = kwargs['sync_mode']
         if 'control_period_ms' in kwargs:
             cmd.control_period_ms = kwargs['control_period_ms']
-        if 'params' in kwargs:
-            cmd.params.CopyFrom(kwargs['params'])
         if 'track_path' in kwargs:
             cmd.track_path = kwargs['track_path']
+        if builder:
+            builder(cmd)
             
         # Send and wait for reply
         self.admin_req.send(cmd.SerializeToString())
@@ -357,104 +374,90 @@ class LilsimClient:
         return reply
         
     def pause(self) -> bool:
-        """Pause the simulation.
-        
-        Returns:
-            True if successful
-        """
+        """Pause the simulation."""
         reply = self._send_admin_command(messages_pb2.PAUSE)
         return reply.success
         
     def run(self) -> bool:
-        """Resume/run the simulation.
-        
-        Returns:
-            True if successful
-        """
+        """Resume the simulation."""
         reply = self._send_admin_command(messages_pb2.RUN)
         return reply.success
         
     def reset(self) -> bool:
-        """Reset the simulation.
-        
-        Returns:
-            True if successful
-        """
+        """Trigger a simulator reset."""
         reply = self._send_admin_command(messages_pb2.RESET)
         return reply.success
         
     def step(self, count: int = 1) -> bool:
-        """Step the simulation by N ticks.
-        
-        Args:
-            count: Number of ticks to step
-            
-        Returns:
-            True if successful
-        """
+        """Advance the simulation by ``count`` ticks."""
         reply = self._send_admin_command(messages_pb2.STEP, step_count=count)
         return reply.success
         
-    def set_mode(self, sync: bool, control_period_ms: int = 100) -> bool:
-        """Set synchronous or asynchronous mode.
-        
-        Args:
-            sync: True for sync mode, False for async
-            control_period_ms: Milliseconds between control requests (sync mode only)
-            
-        Returns:
-            True if successful
-        """
-        reply = self._send_admin_command(
-            messages_pb2.SET_MODE,
-            sync_mode=sync,
-            control_period_ms=control_period_ms
-        )
+    def set_control_mode(self, sync: bool, control_period_ms: int = 100, external_control: bool = True) -> bool:
+        """Configure synchronous/asynchronous mode and preferred control source."""
+        def builder(cmd: messages_pb2.AdminCommand) -> None:
+            cmd.sync_mode = sync
+            cmd.control_period_ms = control_period_ms
+            cmd.use_external_control = external_control
+
+        reply = self._send_admin_command(messages_pb2.SET_CONTROL_MODE, builder=builder)
         return reply.success
+    
+    def set_simulation_config(self,
+                              timestep: Optional[float] = None,
+                              run_speed: Optional[float] = None) -> bool:
+        """Set simulator-level configuration such as timestep and run speed."""
+        if timestep is None and run_speed is None:
+            raise ValueError("Provide at least one of timestep or run_speed.")
+
+        def builder(cmd: messages_pb2.AdminCommand) -> None:
+            if timestep is not None:
+                cmd.timestep = timestep
+            if run_speed is not None:
+                cmd.run_speed = run_speed
+
+        reply = self._send_admin_command(messages_pb2.SET_SIM_CONFIG, builder=builder)
+        return reply.success
+
+    def get_simulation_config(self) -> tuple[Optional[float], Optional[float]]:
+        """Fetch the currently requested timestep and run speed."""
+        reply = self._send_admin_command(messages_pb2.GET_SIM_CONFIG)
+        if not reply.success:
+            raise RuntimeError(f"Failed to fetch simulation config: {reply.message}")
+        timestep = reply.timestep if reply.HasField("timestep") else None
+        run_speed = reply.run_speed if reply.HasField("run_speed") else None
+        return timestep, run_speed
         
-    def set_params(self, dt: float = None, wheelbase: float = None, 
-                   v_max: float = None, delta_max: float = None, Lf: float = None,
-                   ax_max: float = None, steer_rate_max: float = None,
-                   steering_mode: str = None) -> bool:
-        """Set simulation parameters.
-        
-        Args:
-            dt: Timestep in seconds
-            wheelbase: Wheelbase in meters
-            v_max: Maximum velocity in m/s
-            delta_max: Maximum steering angle in radians
-            Lf: Distance from CG to front axle in meters
-            ax_max: Maximum acceleration in m/s^2
-            steer_rate_max: Maximum steering rate in rad/s
-            steering_mode: 'angle' or 'rate' (None to keep current)
-            
-        Returns:
-            True if successful
-        """
-        params = messages_pb2.SimParams()
-        if dt is not None:
-            params.dt = dt
-        if wheelbase is not None:
-            params.wheelbase = wheelbase
-        if v_max is not None:
-            params.v_max = v_max
-        if delta_max is not None:
-            params.delta_max = delta_max
-        if Lf is not None:
-            params.Lf = Lf
-        if ax_max is not None:
-            params.ax_max = ax_max
-        if steer_rate_max is not None:
-            params.steer_rate_max = steer_rate_max
-        if steering_mode is not None:
-            if steering_mode.lower() == 'angle':
-                params.steering_mode = messages_pb2.ANGLE
-            elif steering_mode.lower() == 'rate':
-                params.steering_mode = messages_pb2.RATE
-            else:
-                logger.warning(f"Invalid steering_mode '{steering_mode}', ignoring")
-            
-        reply = self._send_admin_command(messages_pb2.SET_PARAMS, params=params)
+    def set_parameters(self, overrides: Mapping[str, float]) -> bool:
+        """Set parameter values by name using ModelMetadata indices."""
+        updates = self._build_param_updates(overrides)
+        if not updates:
+            logger.warning("No valid parameter overrides supplied.")
+            return False
+
+        def builder(cmd: messages_pb2.AdminCommand) -> None:
+            for index, value in updates:
+                entry = cmd.param_updates.add()
+                entry.index = index
+                entry.value = value
+
+        reply = self._send_admin_command(messages_pb2.SET_PARAMS, builder=builder)
+        return reply.success
+    
+    def set_settings(self, overrides: Mapping[str, int]) -> bool:
+        """Set setting values by name using ModelMetadata indices."""
+        updates = self._build_setting_updates(overrides)
+        if not updates:
+            logger.warning("No valid setting overrides supplied.")
+            return False
+
+        def builder(cmd: messages_pb2.AdminCommand) -> None:
+            for index, value in updates:
+                entry = cmd.setting_updates.add()
+                entry.index = index
+                entry.value = value
+
+        reply = self._send_admin_command(messages_pb2.SET_SETTINGS, builder=builder)
         return reply.success
     
     def set_track(self, track_path: str) -> bool:
@@ -467,6 +470,22 @@ class LilsimClient:
             True if successful
         """
         reply = self._send_admin_command(messages_pb2.SET_TRACK, track_path=track_path)
+        return reply.success
+    
+    def load_param_profile(self, path: str) -> bool:
+        """Load a YAML parameter profile."""
+        if not path:
+            raise ValueError("Parameter profile path must be provided.")
+
+        def builder(cmd: messages_pb2.AdminCommand) -> None:
+            cmd.param_profile_path = path
+
+        reply = self._send_admin_command(messages_pb2.LOAD_PARAM_PROFILE, builder=builder)
+        return reply.success
+    
+    def clear_param_profile(self) -> bool:
+        """Clear the currently staged parameter profile."""
+        reply = self._send_admin_command(messages_pb2.CLEAR_PARAM_PROFILE)
         return reply.success
         
     # ========== Marker Publishing ==========
@@ -967,6 +986,140 @@ class LilsimClient:
         cmd.type = messages_pb2.CLEAR_ALL
         
         self.marker_pub.send_multipart([b"COMMAND", cmd.SerializeToString()])
+    
+    # ========== Metadata + control helpers ==========
+    
+    def _apply_metadata(self, metadata: messages_pb2.ModelMetadata) -> None:
+        """Cache metadata and rebuild name -> index maps."""
+        self.metadata = metadata
+        self.metadata_version = metadata.schema_version
+        self.param_name_to_index = {entry.name: idx for idx, entry in enumerate(metadata.params)}
+        self.setting_name_to_index = {entry.name: idx for idx, entry in enumerate(metadata.settings)}
+        self.input_name_to_index = {entry.name: idx for idx, entry in enumerate(metadata.inputs)}
+        self._zero_input_vector = [0.0] * len(metadata.inputs)
+        self.last_control_vector = list(self._zero_input_vector)
+    
+    def _ensure_metadata(self) -> None:
+        """Ensure metadata is available before using name-based helpers."""
+        if self.metadata is None:
+            self.refresh_metadata()
+    
+    def _build_param_updates(self, overrides: Mapping[str, float]) -> list[tuple[int, float]]:
+        """Convert name/value dict to list of (index, value)."""
+        self._ensure_metadata()
+        updates: list[tuple[int, float]] = []
+        for name, value in overrides.items():
+            idx = self.param_name_to_index.get(name)
+            if idx is None:
+                logger.warning("Unknown parameter '%s'; skipping.", name)
+                continue
+            updates.append((idx, float(value)))
+        return updates
+    
+    def _build_setting_updates(self, overrides: Mapping[str, int]) -> list[tuple[int, int]]:
+        """Convert name/value dict to list of (index, value)."""
+        self._ensure_metadata()
+        updates: list[tuple[int, int]] = []
+        for name, value in overrides.items():
+            idx = self.setting_name_to_index.get(name)
+            if idx is None:
+                logger.warning("Unknown setting '%s'; skipping.", name)
+                continue
+            updates.append((idx, int(value)))
+        return updates
+    
+    def _build_input_vector(self, overrides: Mapping[str, float]) -> list[float]:
+        """Return a full input vector populated from the provided overrides."""
+        self._ensure_metadata()
+        vector = list(self._zero_input_vector)
+        for name, value in overrides.items():
+            idx = self.input_name_to_index.get(name)
+            if idx is None:
+                logger.warning("Unknown input '%s'; skipping.", name)
+                continue
+            vector[idx] = float(value)
+        return vector
+    
+    def _resolve_input_name(self, preferred: str) -> Optional[str]:
+        """Resolve a canonical input name, falling back to substring matches."""
+        self._ensure_metadata()
+        if preferred in self.input_name_to_index:
+            return preferred
+        for name in self.input_name_to_index:
+            if preferred in name:
+                return name
+        logger.warning("Unable to resolve input '%s' from metadata.", preferred)
+        return None
+    
+    def _legacy_control_args(
+        self,
+        steer_angle: Optional[float] = None,
+        steer_rate: Optional[float] = None,
+        ax: Optional[float] = None,
+    ) -> Dict[str, float]:
+        """Translate legacy keyword args into metadata input names."""
+        overrides: Dict[str, float] = {}
+        if steer_angle is not None:
+            name = self._resolve_input_name("steering_wheel_angle_input")
+            if name:
+                overrides[name] = steer_angle
+        if steer_rate is not None:
+            name = self._resolve_input_name("steering_wheel_rate_input")
+            if name:
+                overrides[name] = steer_rate
+        if ax is not None:
+            name = self._resolve_input_name("ax_input")
+            if name:
+                overrides[name] = ax
+        return overrides
+    
+    def _format_control_output(self, output: Any) -> Optional[list[float]]:
+        """Coerce controller output into a metadata-ordered vector."""
+        if output is None:
+            return None
+        if isinstance(output, Mapping):
+            return self._build_input_vector(output)
+        if isinstance(output, Sequence) and not isinstance(output, (str, bytes, bytearray)):
+            if len(output) == len(self._zero_input_vector):
+                return [float(v) for v in output]
+            if len(output) == 3:
+                overrides = self._legacy_control_args(
+                    steer_angle=output[0],
+                    steer_rate=output[1],
+                    ax=output[2],
+                )
+                return self._build_input_vector(overrides)
+        return None
+    
+    def decode_scene_state(self, scene: messages_pb2.SceneState) -> Dict[str, Any]:
+        """Convert a SceneState into dict form using cached metadata."""
+        self._ensure_metadata()
+        data: Dict[str, Any] = {
+            "tick": scene.header.tick,
+            "sim_time": scene.header.sim_time,
+            "states": {},
+            "inputs": {},
+            "params": {},
+            "settings": {},
+        }
+        if self.metadata:
+            for idx, value in enumerate(scene.state_values):
+                name = self.metadata.states[idx].name if idx < len(self.metadata.states) else f"state_{idx}"
+                data["states"][name] = value
+            for idx, value in enumerate(scene.input_values):
+                name = self.metadata.inputs[idx].name if idx < len(self.metadata.inputs) else f"input_{idx}"
+                data["inputs"][name] = value
+            for idx, value in enumerate(scene.param_values):
+                name = self.metadata.params[idx].name if idx < len(self.metadata.params) else f"param_{idx}"
+                data["params"][name] = value
+            for idx, value in enumerate(scene.setting_values):
+                name = self.metadata.settings[idx].name if idx < len(self.metadata.settings) else f"setting_{idx}"
+                data["settings"][name] = int(value)
+        return data
+    
+    def decode_state_update(self, update: messages_pb2.StateUpdate) -> Dict[str, Any]:
+        """Decode a StateUpdate helper wrapper."""
+        return self.decode_scene_state(update.scene)
         
     # ========== Convenience methods ==========
     
@@ -991,4 +1144,58 @@ class LilsimClient:
         while self.latest_state is None and (time.time() - start) < timeout:
             time.sleep(0.01)
         return self.latest_state
+
+    def get_car_parameter(self, name: str) -> float:
+        """Return the currently staged value for a car parameter (from metadata)."""
+        metadata = self.get_metadata()
+        for meta in metadata.params:
+            if meta.name == name:
+                return meta.default_value
+        raise KeyError(f"Unknown parameter '{name}'. Available: {[p.name for p in metadata.params]}")
+
+    def get_car_setting(self, name: str) -> int:
+        """Return the currently staged index for a setting (from metadata)."""
+        metadata = self.get_metadata()
+        for meta in metadata.settings:
+            if meta.name == name:
+                return meta.default_index
+        raise KeyError(f"Unknown setting '{name}'. Available: {[s.name for s in metadata.settings]}")
+
+    def get_metadata_summary(self, refresh: bool = False) -> Dict[str, Any]:
+        """Return a dictionary with easy-to-query metadata contents."""
+        metadata = self.get_metadata(refresh=refresh)
+        summary: Dict[str, Any] = {
+            "model_name": metadata.model_name,
+            "schema_version": metadata.schema_version,
+            "params": {},
+            "settings": {},
+            "inputs": {},
+            "states": {},
+        }
+
+        for meta in metadata.params:
+            limits = meta.limits
+            summary["params"][meta.name] = {
+                "value": meta.default_value,
+                "min": limits.min if limits is not None else None,
+                "max": limits.max if limits is not None else None,
+            }
+        for meta in metadata.settings:
+            summary["settings"][meta.name] = {
+                "value": meta.default_index,
+                "options": list(meta.options),
+            }
+        for meta in metadata.inputs:
+            limits = meta.limits
+            summary["inputs"][meta.name] = {
+                "min": limits.min if limits is not None else None,
+                "max": limits.max if limits is not None else None,
+            }
+        for meta in metadata.states:
+            limits = meta.limits
+            summary["states"][meta.name] = {
+                "min": limits.min if limits is not None else None,
+                "max": limits.max if limits is not None else None,
+            }
+        return summary
 

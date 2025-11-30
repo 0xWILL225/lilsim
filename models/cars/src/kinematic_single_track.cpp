@@ -28,7 +28,7 @@
       OPTION_ENTRY(OPTION, "rate")  \
   )
 
-static constexpr double steering_steering_wheel_angle_max = 3.0;
+static constexpr double steering_steering_wheel_angle_max = 2.0;
 static constexpr double steering_wheel_rate_max = 20.0;
 static constexpr double ax_max = 30.0;
 

@@ -44,7 +44,7 @@
 // ============================
 
 #define MANDATORY_PARAM_LIST(X)                                      \
-    PARAM_DOUBLE_ENTRY(X, wheelbase,   WHEELBASE_PARAM_NAME,   2.0, 0.0, 10.0)       \
+    PARAM_DOUBLE_ENTRY(X, wheelbase,   WHEELBASE_PARAM_NAME,   1.9, 0.0, 10.0)       \
     PARAM_DOUBLE_ENTRY(X, track_width, TRACK_WIDTH_PARAM_NAME, 1.4, 0.0, 10.0)
 
 #ifndef PARAM_LIST

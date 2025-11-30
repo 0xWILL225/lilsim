@@ -52,6 +52,8 @@
 		- Perhaps except the inputs (needs consideration)
 			- Mapping of inputs also needs to be set by settings in the GUI, since car models now don't have any obligatory input types
 	- Update Python SDK to match changes and update the example jupyter notebook
+- Fix so that the model parameter loader can read in "infinity" from yaml file
+- Add simulation run speed and dt parameters in Simulation Control tab 
 - Add car sprite marker
 	- Defined by obligatory car state variables (though wheel angles are optional) and opacity
 	- Optionally, a tint color and tint opacity can be specified to make it clearly separable from the actual car

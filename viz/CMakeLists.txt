@@ -27,6 +27,7 @@ add_library(viz STATIC
   src/panels/ViewportPanel.cpp
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp
   ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog/ImGuiFileDialog.cpp
+  ${CMAKE_SOURCE_DIR}/third_party/imgui_toggle/imgui_toggle.cpp
 )
 
 # Disable clang-tidy for third-party files
@@ -38,6 +39,11 @@ set_source_files_properties(
 )
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog/ImGuiFileDialog.cpp
+  PROPERTIES
+  SKIP_LINTING ON
+)
+set_source_files_properties(
+  ${CMAKE_SOURCE_DIR}/third_party/imgui_toggle/imgui_toggle.cpp
   PROPERTIES
   SKIP_LINTING ON
 )
@@ -55,6 +61,7 @@ target_link_libraries(viz PUBLIC
   scene 
   sim
   common
+  comm
   # comm
   # protobuf::libprotobuf
   glfw
