@@ -59,10 +59,6 @@
 	- Defined by obligatory car state variables (though front wheel angles are optional) and opacity
 	- Optionally, a tint color and tint opacity can be specified to make it clearly separable from the actual car
 	- No TSAL or ASSI stuff required for car markers
-- Proper installation
-	- Make nice icon png with rounded edges
-	- Install script that installs the program properly and makes it launchable from start menu (from whatever menu opens when pressing the "Windows" key)
-		- Also makes it launchable from terminal as simple command
 - GUI configuration cache file
 	- Config file stores GUI state after ctrl+S is pressed
 		- Window size is stored
@@ -71,6 +67,10 @@
 		- Read on every start up
 	- Top bar with "File" tab, where one can save and "save as..." the GUI config
 		- Can also set the absolute file path for what config file to use (ImGuiFileDialogue)
+- Proper installation
+	- Make nice icon png with rounded edges
+	- Install script that installs the program properly and makes it launchable from start menu (from whatever menu opens when pressing the "Windows" key)
+		- Also makes it launchable from terminal as simple command
 - Make new project and new repo on Github with a better name for the simulator
 - Make a template repo for how a development repo can look like
 	- Separate repo in the same project on github
