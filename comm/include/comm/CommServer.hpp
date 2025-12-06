@@ -16,13 +16,6 @@
 namespace comm {
 
 /**
- * @brief Callback for handling admin commands
- * @param cmd The received admin command
- * @return AdminReply to send back to client
- */
-using AdminCallback = std::function<lilsim::AdminReply(const lilsim::AdminCommand&)>;
-
-/**
  * @brief Central server for ZeroMQ communication
  * 
  * Manages three sockets used by the simulator:
@@ -39,87 +32,26 @@ public:
   CommServer(const CommServer&) = delete;
   CommServer& operator=(const CommServer&) = delete;
 
-  /**
-   * @brief Initialize and bind all sockets
-   * @return true if successful, false otherwise
-   */
   bool start();
-
-  /**
-   * @brief Close all sockets
-   */
   void stop();
-
-  /**
-   * @brief Check if the server is running
-   */
   bool isRunning() const { return m_running.load(std::memory_order_relaxed); }
-
-  /**
-   * @brief Publish a state update (non-blocking)
-   * @param update The state update to publish
-   */
   void publishState(const lilsim::StateUpdate& update);
-  /**
-   * @brief Publish a metadata update (non-blocking).
-   */
   void publishMetadata(const lilsim::ModelMetadata& metadata);
 
-  /**
-   * @brief Request control from client (blocking with timeout)
-   * @param request The control request to send
-   * @param reply Output parameter for the control reply
-   * @param timeout_ms Timeout in milliseconds
-   * @return true if reply received within timeout, false otherwise
-   */
-  bool requestControl(const lilsim::ControlRequest& request,
-                      lilsim::ControlReply& reply,
-                      int timeout_ms = 100);
+  bool sendControlRequest(const lilsim::ControlRequest& request);
+  std::optional<lilsim::ControlReply> pollControlReply();
+  bool waitControlReply(lilsim::ControlReply& reply, int timeout_ms);
 
-  /**
-   * @brief Probe if sync client is connected (lightweight heartbeat check)
-   * @param timeout_ms Timeout in milliseconds
-   * @return true if client responded, false otherwise
-   */
   bool probeConnection(int timeout_ms = 50);
-
-  /**
-   * @brief Poll for admin commands (non-blocking)
-   * @return Admin command if one is pending, std::nullopt otherwise
-   */
   std::optional<lilsim::AdminCommand> pollAdminCommand();
-
-  /**
-   * @brief Reply to an admin command
-   * @param reply The admin reply to send
-   */
   void replyAdmin(const lilsim::AdminReply& reply);
-
-  /**
-   * @brief Check if there's a pending admin command waiting for reply
-   */
   bool hasAdminCommandPending() const { 
     return m_adminCommandPending.load(std::memory_order_relaxed); 
   }
-
-  /**
-   * @brief Poll for async control (non-blocking)
-   * @return ControlAsync if one is pending, std::nullopt otherwise
-   */
   std::optional<lilsim::ControlAsync> pollAsyncControl();
-
-  /**
-   * @brief Check if sync client is connected
-   * 
-   * Connection state is automatically updated by requestControl() and probeConnection()
-   */
   bool isSyncClientConnected() const {
     return m_syncClientConnected.load(std::memory_order_relaxed);
   }
-
-  /**
-   * @brief Shared ZeroMQ context for inproc sockets (viz GUI).
-   */
   std::shared_ptr<zmq::context_t> getContext() const { return m_context; }
 
 private:
@@ -149,15 +81,7 @@ public:
   MarkerSubscriber(const MarkerSubscriber&) = delete;
   MarkerSubscriber& operator=(const MarkerSubscriber&) = delete;
 
-  /**
-   * @brief Initialize and connect subscriber
-   * @return true if successful, false otherwise
-   */
   bool start();
-
-  /**
-   * @brief Close the socket
-   */
   void stop();
 
   /**
@@ -183,10 +107,6 @@ public:
     std::optional<lilsim::MarkerCommand> marker_command;
   };
 
-  /**
-   * @brief Poll for any marker-related message (non-blocking)
-   * @return PollResult containing the message type and data
-   */
   PollResult poll();
 
 private:

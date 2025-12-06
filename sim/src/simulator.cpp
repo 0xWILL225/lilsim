@@ -22,6 +22,7 @@ namespace sim {
 namespace {
 
 constexpr uint32_t kProtocolVersion = 1;
+constexpr std::chrono::milliseconds kSyncTimeout{1000};
 
 /**
  * @brief Load and parse a metadata profile from a YAML file.
@@ -137,6 +138,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
 Simulator::Simulator(scene::SceneDB& db)
   : m_db(db) {
   ensureCommServer();
+  applyPendingTimingConfig(m_dt.load(std::memory_order_relaxed));
 }
 
 Simulator::~Simulator() {
@@ -243,6 +245,171 @@ void Simulator::setRunSpeed(double multiplier) {
 
 double Simulator::getRunSpeed() const {
     return m_runSpeed.load(std::memory_order_relaxed);
+}
+
+/**
+ * @brief Convert a millisecond duration into an integer number of control ticks.
+ *
+ * Values are clamped to at least one tick so the simulator never blocks forever waiting
+ * for a reply.
+ *
+ * @param ms        Duration expressed in milliseconds from UI/SDK.
+ * @param dtSeconds Current (or pending) timestep in seconds.
+ * @return Whole number of ticks corresponding to the request.
+ */
+uint32_t Simulator::millisecondsToTicks(double ms, double dtSeconds) const {
+    double dt = std::max(dtSeconds, kMinDt);
+    double seconds = std::max(ms, 0.0) / 1000.0;
+    double ticks = std::max(1.0, seconds / dt);
+    return static_cast<uint32_t>(std::llround(ticks));
+}
+
+/**
+ * @brief Convert a tick count to milliseconds for display purposes.
+ *
+ * @param ticks     Number of ticks.
+ * @param dtSeconds Timestep in seconds.
+ * @return Duration expressed in milliseconds.
+ */
+double Simulator::ticksToMilliseconds(uint32_t ticks, double dtSeconds) const {
+    double dt = std::max(dtSeconds, kMinDt);
+    uint32_t clampedTicks = std::max<uint32_t>(1, ticks);
+    return dt * static_cast<double>(clampedTicks) * 1000.0;
+}
+
+/**
+ * @brief Reset any pending sync-control requests and the cached last input.
+ */
+void Simulator::clearSyncControlQueue() {
+    m_pendingSyncRequests.clear();
+    m_lastControlInput.clear();
+    m_nextControlRequestTick = 0;
+}
+
+/**
+ * @brief Apply any staged control-period/delay timing once a reset occurs.
+ *
+ * Incoming UI/SDK values are stored as pending ticks and converted exactly once when a
+ * new timestep becomes active.
+ *
+ * @param dtSeconds Active timestep after reset.
+ */
+void Simulator::applyPendingTimingConfig(double dtSeconds) {
+    uint32_t periodTicks = m_controlPeriodTicks.load(std::memory_order_relaxed);
+    uint32_t delayTicks = m_controlDelayTicks.load(std::memory_order_relaxed);
+    {
+      std::lock_guard<std::mutex> lock(m_controlTimingMutex);
+      if (m_pendingControlPeriodTicks.has_value()) {
+          periodTicks = *m_pendingControlPeriodTicks;
+      }
+      if (m_pendingControlDelayTicks.has_value()) {
+          delayTicks = *m_pendingControlDelayTicks;
+      }
+      m_pendingControlPeriodTicks.reset();
+      m_pendingControlDelayTicks.reset();
+    }
+
+    periodTicks = std::max<uint32_t>(1, periodTicks);
+    delayTicks = std::max<uint32_t>(1, delayTicks);
+    if (delayTicks > periodTicks) {
+        spdlog::warn("[sim] Control delay {} ticks exceeded control period {} ticks; clamping delay to period.",
+                     delayTicks, periodTicks);
+        delayTicks = periodTicks;
+    }
+
+    m_controlPeriodTicks.store(periodTicks, std::memory_order_relaxed);
+    m_controlDelayTicks.store(delayTicks, std::memory_order_relaxed);
+
+    clearSyncControlQueue();
+
+    double msPeriod = ticksToMilliseconds(periodTicks, dtSeconds);
+    double msDelay = ticksToMilliseconds(delayTicks, dtSeconds);
+    spdlog::info("[sim] Applied control period {} ticks (~{:.2f} ms) and delay {} ticks (~{:.2f} ms).",
+                 periodTicks, msPeriod, delayTicks, msDelay);
+}
+
+/**
+ * @brief Stage a new control period, specified in milliseconds, to apply on reset.
+ *
+ * @param periodMs UI-facing duration in milliseconds.
+ */
+void Simulator::requestControlPeriodMs(double periodMs) {
+    double dtSeconds = getRequestedDt();
+    uint32_t clampedTicks = millisecondsToTicks(periodMs, dtSeconds);
+    {
+        std::lock_guard<std::mutex> lock(m_controlTimingMutex);
+        uint32_t effectiveDelayTicks = m_pendingControlDelayTicks.has_value()
+            ? *m_pendingControlDelayTicks
+            : m_controlDelayTicks.load(std::memory_order_relaxed);
+        if (effectiveDelayTicks > clampedTicks) {
+            spdlog::warn("[sim] Requested control period {} ticks is below pending delay {} ticks; clamping delay to match.",
+                         clampedTicks, effectiveDelayTicks);
+            m_pendingControlDelayTicks = clampedTicks;
+        }
+        m_pendingControlPeriodTicks = clampedTicks;
+    }
+    spdlog::info("[sim] Requested control period change to {} ticks (~{:.2f} ms, applies on reset)",
+                 clampedTicks, ticksToMilliseconds(clampedTicks, dtSeconds));
+}
+
+/**
+ * @brief Current control period converted to milliseconds for UI consumption.
+ */
+double Simulator::getControlPeriodMilliseconds() const {
+    return ticksToMilliseconds(m_controlPeriodTicks.load(std::memory_order_relaxed), getDt());
+}
+
+/**
+ * @brief Pending control period converted to milliseconds.
+ */
+double Simulator::getRequestedControlPeriodMilliseconds() const {
+    std::lock_guard<std::mutex> lock(m_controlTimingMutex);
+    uint32_t ticks = m_pendingControlPeriodTicks.has_value()
+        ? *m_pendingControlPeriodTicks
+        : m_controlPeriodTicks.load(std::memory_order_relaxed);
+    return ticksToMilliseconds(ticks, getRequestedDt());
+}
+
+/**
+ * @brief Stage a new control delay, specified in milliseconds, to apply on reset.
+ *
+ * @param delayMs UI-facing duration in milliseconds.
+ */
+void Simulator::requestControlDelayMs(double delayMs) {
+    double dtSeconds = getRequestedDt();
+    uint32_t clampedTicks = millisecondsToTicks(delayMs, dtSeconds);
+    {
+        std::lock_guard<std::mutex> lock(m_controlTimingMutex);
+        uint32_t effectivePeriodTicks = m_pendingControlPeriodTicks.has_value()
+            ? *m_pendingControlPeriodTicks
+            : m_controlPeriodTicks.load(std::memory_order_relaxed);
+        if (clampedTicks > effectivePeriodTicks) {
+            spdlog::warn("[sim] Requested control delay {} ticks exceeds pending period {} ticks; extending period to match.",
+                         clampedTicks, effectivePeriodTicks);
+            m_pendingControlPeriodTicks = clampedTicks;
+        }
+        m_pendingControlDelayTicks = clampedTicks;
+    }
+    spdlog::info("[sim] Requested control delay change to {} ticks (~{:.2f} ms, applies on reset)",
+                 clampedTicks, ticksToMilliseconds(clampedTicks, dtSeconds));
+}
+
+/**
+ * @brief Current control delay converted to milliseconds for UI consumption.
+ */
+double Simulator::getControlDelayMilliseconds() const {
+    return ticksToMilliseconds(m_controlDelayTicks.load(std::memory_order_relaxed), getDt());
+}
+
+/**
+ * @brief Pending control delay converted to milliseconds.
+ */
+double Simulator::getRequestedControlDelayMilliseconds() const {
+    std::lock_guard<std::mutex> lock(m_controlTimingMutex);
+    uint32_t ticks = m_pendingControlDelayTicks.has_value()
+        ? *m_pendingControlDelayTicks
+        : m_controlDelayTicks.load(std::memory_order_relaxed);
+    return ticksToMilliseconds(ticks, getRequestedDt());
 }
 
 std::vector<Simulator::ModelInfo> Simulator::getAvailableModels() {
@@ -384,6 +551,7 @@ void Simulator::setParamProfileFile(const std::string& path) {
     }
 
     m_pendingParamsDirty.store(true, std::memory_order_relaxed);
+    m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
     spdlog::info("[sim] Parameter profile '{}' loaded. Press Reset to apply.", path);
 }
 
@@ -773,7 +941,7 @@ bool Simulator::handleAdminCommand(const lilsim::AdminCommand& cmd,
         case lilsim::AdminCommandType::SET_CONTROL_MODE: {
             m_syncMode.store(cmd.sync_mode(), std::memory_order_relaxed);
             if (cmd.control_period_ms() > 0) {
-                setControlPeriodMs(cmd.control_period_ms());
+                spdlog::warn("[sim] control_period_ms is deprecated in SET_CONTROL_MODE; use SET_SIM_CONFIG instead.");
             }
             if (cmd.has_use_external_control()) {
                 m_externalControlEnabled.store(cmd.use_external_control(), std::memory_order_relaxed);
@@ -842,25 +1010,37 @@ bool Simulator::handleAdminCommand(const lilsim::AdminCommand& cmd,
         case lilsim::AdminCommandType::SET_SIM_CONFIG: {
             bool applied = false;
             if (cmd.has_timestep()) {
-                requestDt(cmd.timestep());
+                requestDt(cmd.timestep() / 1000.0);
                 applied = true;
             }
             if (cmd.has_run_speed()) {
                 setRunSpeed(cmd.run_speed());
                 applied = true;
             }
+            if (cmd.has_control_period_ms_staged()) {
+                requestControlPeriodMs(static_cast<double>(cmd.control_period_ms_staged()));
+                applied = true;
+            }
+            if (cmd.has_control_delay_ms_staged()) {
+                requestControlDelayMs(static_cast<double>(cmd.control_delay_ms_staged()));
+                applied = true;
+            }
             if (!applied) {
                 reply.set_message("No simulation config fields provided");
                 return false;
             }
-            reply.set_timestep(getRequestedDt());
+            reply.set_timestep(getRequestedDt() * 1000.0);
             reply.set_run_speed(getRunSpeed());
+            reply.set_control_period_ms(getRequestedControlPeriodMilliseconds());
+            reply.set_control_delay_ms(getRequestedControlDelayMilliseconds());
             reply.set_message("Simulation config updated");
             return true;
         }
         case lilsim::AdminCommandType::GET_SIM_CONFIG: {
-            reply.set_timestep(getRequestedDt());
+            reply.set_timestep(getRequestedDt() * 1000.0);
             reply.set_run_speed(getRunSpeed());
+            reply.set_control_period_ms(getRequestedControlPeriodMilliseconds());
+            reply.set_control_delay_ms(getRequestedControlDelayMilliseconds());
             reply.set_message("Simulation config attached");
             return true;
         }
@@ -904,11 +1084,12 @@ bool Simulator::requestSyncControl(const CarModelDescriptor* desc,
     header->set_version(kProtocolVersion);
 
     auto* sceneMsg = request.mutable_scene();
+    const uint64_t requestMetadataVersion = m_metadataVersion.load(std::memory_order_relaxed);
     auto* sceneHeader = sceneMsg->mutable_header();
     sceneHeader->set_tick(tick);
     sceneHeader->set_sim_time(simTime);
     sceneHeader->set_version(kProtocolVersion);
-    sceneMsg->set_metadata_version(m_metadataVersion.load(std::memory_order_relaxed));
+    sceneMsg->set_metadata_version(requestMetadataVersion);
 
     if (desc->state_values && desc->num_states > 0) {
         sceneMsg->mutable_state_values()->Resize(static_cast<int>(desc->num_states), 0.0);
@@ -935,22 +1116,145 @@ bool Simulator::requestSyncControl(const CarModelDescriptor* desc,
         }
     }
 
-    lilsim::ControlReply reply;
-    if (!m_commServer->requestControl(request, reply, static_cast<int>(m_controlPeriodMs.load(std::memory_order_relaxed)))) {
-        spdlog::warn("[sim] Timed out waiting for sync control reply");
+    if (!m_commServer->sendControlRequest(request)) {
+        spdlog::warn("[sim] Failed to send sync control request");
         return false;
     }
-    if (reply.metadata_version() != m_metadataVersion.load(std::memory_order_relaxed)) {
-        spdlog::warn("[sim] Sync control reply metadata mismatch");
-        return false;
+
+    PendingSyncRequest pending;
+    pending.requestTick = tick;
+    uint64_t delayTicks = std::max<uint64_t>(1, m_controlDelayTicks.load(std::memory_order_relaxed));
+    pending.applyTick = tick + delayTicks;
+    pending.metadataVersion = requestMetadataVersion;
+    m_pendingSyncRequests.push_back(std::move(pending));
+    return true;
+}
+
+void Simulator::handleSyncReply(const CarModelDescriptor* desc,
+                                const lilsim::ControlReply& reply) {
+    if (!desc) {
+        return;
+    }
+    auto it = std::find_if(m_pendingSyncRequests.begin(), m_pendingSyncRequests.end(),
+                           [&](const PendingSyncRequest& pending) {
+                               return pending.requestTick == reply.header().tick();
+                           });
+    if (it == m_pendingSyncRequests.end()) {
+        spdlog::warn("[sim] Received sync control reply for unknown tick {}", reply.header().tick());
+        return;
+    }
+    if (reply.metadata_version() != it->metadataVersion) {
+        spdlog::warn("[sim] Sync control reply metadata mismatch (tick {})", reply.header().tick());
+        return;
     }
     if (static_cast<size_t>(reply.input_values_size()) != desc->num_inputs) {
-        spdlog::warn("[sim] Sync control reply input size mismatch");
+        spdlog::warn("[sim] Sync control reply input size mismatch (tick {})", reply.header().tick());
+        return;
+    }
+    it->replyInputs.resize(desc->num_inputs);
+    for (size_t i = 0; i < desc->num_inputs; ++i) {
+        it->replyInputs[i] = reply.input_values(static_cast<int>(i));
+    }
+    it->hasReply = true;
+    it->timeoutArmed = false;
+}
+
+void Simulator::pollSyncReplies(const CarModelDescriptor* desc) {
+    if (!m_commServer || !m_commServer->isRunning()) {
+        return;
+    }
+    while (auto reply = m_commServer->pollControlReply()) {
+        handleSyncReply(desc, *reply);
+    }
+}
+
+void Simulator::dispatchSyncControlRequest(const CarModelDescriptor* desc,
+                                           double simTime,
+                                           uint64_t tick) {
+    if (!desc) {
+        return;
+    }
+    if (tick < m_nextControlRequestTick) {
+        return;
+    }
+    if (requestSyncControl(desc, simTime, tick)) {
+        uint64_t step = std::max<uint32_t>(1, m_controlPeriodTicks.load(std::memory_order_relaxed));
+        m_nextControlRequestTick = tick + step;
+    }
+}
+
+bool Simulator::waitForSyncReply(const CarModelDescriptor* desc,
+                                 uint64_t requestTick) {
+    if (!desc || !m_commServer || !m_commServer->isRunning()) {
         return false;
     }
-    for (size_t i = 0; i < desc->num_inputs; ++i) {
-        desc->input_values[i] = reply.input_values(static_cast<int>(i));
+    auto it = std::find_if(m_pendingSyncRequests.begin(), m_pendingSyncRequests.end(),
+                           [&](const PendingSyncRequest& pending) {
+                               return pending.requestTick == requestTick;
+                           });
+    if (it == m_pendingSyncRequests.end()) {
+        return false;
     }
+    if (!it->timeoutArmed) {
+        it->timeoutArmed = true;
+        it->timeoutDeadline = std::chrono::steady_clock::now() + kSyncTimeout;
+    }
+    while (!it->hasReply) {
+        auto now = std::chrono::steady_clock::now();
+        if (now >= it->timeoutDeadline) {
+            spdlog::warn("[sim] Sync control request at tick {} timed out; pausing simulation.", requestTick);
+            pause();
+            clearSyncControlQueue();
+            return false;
+        }
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(it->timeoutDeadline - now);
+        int waitMs = static_cast<int>(std::clamp<int64_t>(remaining.count(), 1, 25));
+        lilsim::ControlReply reply;
+        if (m_commServer->waitControlReply(reply, waitMs)) {
+            handleSyncReply(desc, reply);
+        }
+    }
+    return true;
+}
+
+bool Simulator::ensureSyncControlReady(const CarModelDescriptor* desc,
+                                       uint64_t tick) {
+    if (!desc) {
+        return true;
+    }
+    auto applyLastInputs = [&]() {
+        if (m_lastControlInput.empty() || !desc->input_values) {
+            return;
+        }
+        size_t count = std::min(m_lastControlInput.size(), static_cast<size_t>(desc->num_inputs));
+        for (size_t i = 0; i < count; ++i) {
+            desc->input_values[i] = m_lastControlInput[i];
+        }
+    };
+
+    if (m_pendingSyncRequests.empty()) {
+        applyLastInputs();
+        return true;
+    }
+
+    auto& pending = m_pendingSyncRequests.front();
+    if (pending.applyTick > tick) {
+        applyLastInputs();
+        return true;
+    }
+
+    if (!pending.hasReply) {
+        if (!waitForSyncReply(desc, pending.requestTick)) {
+            return false;
+        }
+    }
+
+    if (!pending.replyInputs.empty()) {
+        m_lastControlInput = pending.replyInputs;
+        applyLastInputs();
+    }
+
+    m_pendingSyncRequests.pop_front();
     return true;
 }
 
@@ -1297,6 +1601,7 @@ void Simulator::loop() {
             }
         }
         double dt = getDt();
+        applyPendingTimingConfig(dt);
 
         restoreBaseMetadata(desc);
         if (profileToApply) {
@@ -1319,6 +1624,11 @@ void Simulator::loop() {
         
         m_state.car_state_values.assign(desc->state_values, desc->state_values + desc->num_states);
         m_state.car_input_values.assign(desc->input_values, desc->input_values + desc->num_inputs);
+        if (desc->input_values && desc->num_inputs > 0) {
+            m_lastControlInput.assign(desc->input_values, desc->input_values + desc->num_inputs);
+        } else {
+            m_lastControlInput.clear();
+        }
         
         tick = 0;
         m_db.tick.store(tick, std::memory_order_relaxed);
@@ -1353,10 +1663,21 @@ void Simulator::loop() {
       }
     }
 
+    bool syncReady = true;
     if (externalControlActive &&
         m_commServer && m_commEnabled.load(std::memory_order_relaxed) &&
         syncMode) {
-      requestSyncControl(desc, tick * dt, tick);
+      pollSyncReplies(desc);
+      dispatchSyncControlRequest(desc, tick * dt, tick);
+      syncReady = ensureSyncControlReady(desc, tick);
+    } else {
+      clearSyncControlQueue();
+    }
+    if (!syncReady) {
+      lock.unlock();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      next = clock::now();
+      continue;
     }
 
     m_modelLoader->step(m_carModel, dt);

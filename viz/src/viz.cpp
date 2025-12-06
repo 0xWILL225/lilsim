@@ -486,17 +486,17 @@ void Application::setupPanels() {
     }
     
     ImGui::Separator();
-    double activeDt = m_simulator.getDt();
-    double requestedDt = m_simulator.getRequestedDt();
-    double dtInput = requestedDt;
-    ImGui::TextUnformatted("Timestep dt (s)");
+    double activeDtMs = m_simulator.getDt() * 1000.0;
+    double requestedDtMs = m_simulator.getRequestedDt() * 1000.0;
+    double dtInput = requestedDtMs;
+    ImGui::TextUnformatted("Timestep dt (ms)");
     ImGui::SetNextItemWidth(-1);
-    if (ImGui::InputDouble("##SimDtInput", &dtInput, 0.001, 0.01, "%.4f")) {
-        dtInput = std::clamp(dtInput, 0.001, 1.0);
-        m_simulator.requestDt(dtInput);
+    if (ImGui::InputDouble("##SimDtInput", &dtInput, 0.1, 1.0, "%.2f")) {
+        dtInput = std::clamp(dtInput, 1.0, 1000.0);
+        m_simulator.requestDt(dtInput / 1000.0);
     }
     ImGui::SameLine();
-    if (std::abs(dtInput - activeDt) > 1e-6) {
+    if (std::abs(dtInput - activeDtMs) > 1e-3) {
         ImGui::TextUnformatted("(pending, applies on reset)");
     } else {
         ImGui::TextUnformatted("(active)");
@@ -557,6 +557,45 @@ void Application::setupPanels() {
     ImGui::TextUnformatted(asyncToggle ? "Asynchronous" : "Synchronous");
 
     ImGui::PopID();
+
+    bool syncControlsEnabled = !asyncToggle;
+    if (!syncControlsEnabled) {
+        ImGui::BeginDisabled();
+    }
+
+    ImGui::TextUnformatted("Control Period (ms)");
+    double controlPeriodInput = m_simulator.getRequestedControlPeriodMilliseconds();
+    double activeControlPeriod = m_simulator.getControlPeriodMilliseconds();
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputDouble("##ControlPeriodMs", &controlPeriodInput, 0.5, 1.0, "%.1f")) {
+        controlPeriodInput = std::max(1.0, controlPeriodInput);
+        m_simulator.requestControlPeriodMs(controlPeriodInput);
+    }
+    ImGui::SameLine();
+    if (std::abs(controlPeriodInput - activeControlPeriod) > 0.5) {
+        ImGui::TextUnformatted("(pending, applies on reset)");
+    } else {
+        ImGui::TextUnformatted("(active)");
+    }
+
+    ImGui::TextUnformatted("Control Delay (ms)");
+    double controlDelayInput = m_simulator.getRequestedControlDelayMilliseconds();
+    double activeControlDelay = m_simulator.getControlDelayMilliseconds();
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputDouble("##ControlDelayMs", &controlDelayInput, 0.5, 1.0, "%.1f")) {
+        controlDelayInput = std::max(1.0, controlDelayInput);
+        m_simulator.requestControlDelayMs(controlDelayInput);
+    }
+    ImGui::SameLine();
+    if (std::abs(controlDelayInput - activeControlDelay) > 0.5) {
+        ImGui::TextUnformatted("(pending, applies on reset)");
+    } else {
+        ImGui::TextUnformatted("(active)");
+    }
+
+    if (!syncControlsEnabled) {
+        ImGui::EndDisabled();
+    }
   });
 
   m_rightPanel.addSection("Model Selection", [this]() {
@@ -992,7 +1031,6 @@ bool Application::sendSetModeCommand(bool sync, bool externalControl) {
   return sendAdminCommand(::lilsim::AdminCommandType::SET_CONTROL_MODE,
                           [&](::lilsim::AdminCommand& cmd) {
                             cmd.set_sync_mode(sync);
-                            cmd.set_control_period_ms(m_simulator.getControlPeriodMs());
                             cmd.set_use_external_control(externalControl);
                           });
 }

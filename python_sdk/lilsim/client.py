@@ -352,8 +352,6 @@ class LilsimClient:
             cmd.step_count = kwargs['step_count']
         if 'sync_mode' in kwargs:
             cmd.sync_mode = kwargs['sync_mode']
-        if 'control_period_ms' in kwargs:
-            cmd.control_period_ms = kwargs['control_period_ms']
         if 'track_path' in kwargs:
             cmd.track_path = kwargs['track_path']
         if builder:
@@ -393,40 +391,55 @@ class LilsimClient:
         reply = self._send_admin_command(messages_pb2.STEP, step_count=count)
         return reply.success
         
-    def set_control_mode(self, sync: bool, control_period_ms: int = 100, external_control: bool = True) -> bool:
+    def set_control_mode(self, sync: bool, external_control: bool = True) -> bool:
         """Configure synchronous/asynchronous mode and preferred control source."""
         def builder(cmd: messages_pb2.AdminCommand) -> None:
             cmd.sync_mode = sync
-            cmd.control_period_ms = control_period_ms
             cmd.use_external_control = external_control
 
         reply = self._send_admin_command(messages_pb2.SET_CONTROL_MODE, builder=builder)
         return reply.success
     
     def set_simulation_config(self,
-                              timestep: Optional[float] = None,
-                              run_speed: Optional[float] = None) -> bool:
-        """Set simulator-level configuration such as timestep and run speed."""
-        if timestep is None and run_speed is None:
-            raise ValueError("Provide at least one of timestep or run_speed.")
+                              timestep_ms: Optional[float] = None,
+                              run_speed: Optional[float] = None,
+                              control_period_ms: Optional[float] = None,
+                              control_delay_ms: Optional[float] = None) -> bool:
+        """Stage simulator-level configuration.
+
+        Args:
+            timestep_ms: Desired dt in milliseconds (applies on next reset).
+            run_speed: Real-time multiplier applied immediately.
+            control_period_ms: Milliseconds between sync-control requests (float, applies on reset).
+            control_delay_ms: Milliseconds of control-delivery delay (float, applies on reset).
+        """
+        if all(value is None for value in (timestep_ms, run_speed, control_period_ms, control_delay_ms)):
+            raise ValueError("Provide at least one field to update.")
 
         def builder(cmd: messages_pb2.AdminCommand) -> None:
-            if timestep is not None:
-                cmd.timestep = timestep
+            if timestep_ms is not None:
+                cmd.timestep = float(timestep_ms)
             if run_speed is not None:
                 cmd.run_speed = run_speed
+            if control_period_ms is not None:
+                cmd.control_period_ms_staged = float(control_period_ms)
+            if control_delay_ms is not None:
+                cmd.control_delay_ms_staged = float(control_delay_ms)
 
         reply = self._send_admin_command(messages_pb2.SET_SIM_CONFIG, builder=builder)
         return reply.success
 
-    def get_simulation_config(self) -> tuple[Optional[float], Optional[float]]:
-        """Fetch the currently requested timestep and run speed."""
+    def get_simulation_config(self) -> dict[str, Optional[float]]:
+        """Fetch the currently requested timestep/run speed and staged control period/delay."""
         reply = self._send_admin_command(messages_pb2.GET_SIM_CONFIG)
         if not reply.success:
             raise RuntimeError(f"Failed to fetch simulation config: {reply.message}")
-        timestep = reply.timestep if reply.HasField("timestep") else None
-        run_speed = reply.run_speed if reply.HasField("run_speed") else None
-        return timestep, run_speed
+        return {
+            "timestep_ms": reply.timestep if reply.HasField("timestep") else None,
+            "run_speed": reply.run_speed if reply.HasField("run_speed") else None,
+            "control_period_ms": float(reply.control_period_ms) if reply.HasField("control_period_ms") else None,
+            "control_delay_ms": float(reply.control_delay_ms) if reply.HasField("control_delay_ms") else None,
+        }
         
     def set_parameters(self, overrides: Mapping[str, float]) -> bool:
         """Set parameter values by name using ModelMetadata indices."""

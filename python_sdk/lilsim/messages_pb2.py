@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0emessages.proto\x12\x06lilsim\"9\n\x06Header\x12\x0c\n\x04tick\x18\x01 \x01(\x04\x12\x10\n\x08sim_time\x18\x02 \x01(\x01\x12\x0f\n\x07version\x18\x03 \x01(\r\"\x1c\n\x04Vec2\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\"\'\n\x0bScalarRange\x12\x0b\n\x03min\x18\x01 \x01(\x01\x12\x0b\n\x03max\x18\x02 \x01(\x01\"Y\n\rParameterMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x15\n\rdefault_value\x18\x02 \x01(\x01\x12#\n\x06limits\x18\x03 \x01(\x0b\x32\x13.lilsim.ScalarRange\"C\n\x0bSettingMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\x12\x15\n\rdefault_index\x18\x03 \x01(\r\">\n\tInputMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12#\n\x06limits\x18\x02 \x01(\x0b\x32\x13.lilsim.ScalarRange\">\n\tStateMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12#\n\x06limits\x18\x02 \x01(\x0b\x32\x13.lilsim.ScalarRange\"\xef\x01\n\rModelMetadata\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x12\n\nmodel_name\x18\x02 \x01(\t\x12\x16\n\x0eschema_version\x18\x03 \x01(\x04\x12%\n\x06params\x18\x04 \x03(\x0b\x32\x15.lilsim.ParameterMeta\x12%\n\x08settings\x18\x05 \x03(\x0b\x32\x13.lilsim.SettingMeta\x12!\n\x06inputs\x18\x06 \x03(\x0b\x32\x11.lilsim.InputMeta\x12!\n\x06states\x18\x07 \x03(\x0b\x32\x11.lilsim.StateMeta\"\xa0\x01\n\nSceneState\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x18\n\x10metadata_version\x18\x02 \x01(\x04\x12\x14\n\x0cstate_values\x18\x03 \x03(\x01\x12\x14\n\x0cinput_values\x18\x04 \x03(\x01\x12\x14\n\x0cparam_values\x18\x05 \x03(\x01\x12\x16\n\x0esetting_values\x18\x06 \x03(\x05\"0\n\x0bStateUpdate\x12!\n\x05scene\x18\x01 \x01(\x0b\x32\x12.lilsim.SceneState\"^\n\x0c\x43ontrolAsync\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x18\n\x10metadata_version\x18\x02 \x01(\x04\x12\x14\n\x0cinput_values\x18\x03 \x03(\x01\"S\n\x0e\x43ontrolRequest\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12!\n\x05scene\x18\x02 \x01(\x0b\x32\x12.lilsim.SceneState\"^\n\x0c\x43ontrolReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x18\n\x10metadata_version\x18\x02 \x01(\x04\x12\x14\n\x0cinput_values\x18\x03 \x03(\x01\"-\n\rIndexedDouble\x12\r\n\x05index\x18\x01 \x01(\r\x12\r\n\x05value\x18\x02 \x01(\x01\",\n\x0cIndexedInt32\x12\r\n\x05index\x18\x01 \x01(\r\x12\r\n\x05value\x18\x02 \x01(\x05\"\xab\x03\n\x0c\x41\x64minCommand\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12&\n\x04type\x18\x02 \x01(\x0e\x32\x18.lilsim.AdminCommandType\x12\x12\n\nstep_count\x18\x03 \x01(\x04\x12,\n\rparam_updates\x18\x04 \x03(\x0b\x32\x15.lilsim.IndexedDouble\x12-\n\x0fsetting_updates\x18\x05 \x03(\x0b\x32\x14.lilsim.IndexedInt32\x12\x11\n\tsync_mode\x18\x06 \x01(\x08\x12\x19\n\x11\x63ontrol_period_ms\x18\x07 \x01(\r\x12\x12\n\ntrack_path\x18\x08 \x01(\t\x12\x1a\n\x12param_profile_path\x18\t \x01(\t\x12!\n\x14use_external_control\x18\n \x01(\x08H\x00\x88\x01\x01\x12\x15\n\x08timestep\x18\x0b \x01(\x01H\x01\x88\x01\x01\x12\x16\n\trun_speed\x18\x0c \x01(\x01H\x02\x88\x01\x01\x42\x17\n\x15_use_external_controlB\x0b\n\t_timestepB\x0c\n\n_run_speed\"\xc1\x01\n\nAdminReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\'\n\x08metadata\x18\x04 \x01(\x0b\x32\x15.lilsim.ModelMetadata\x12\x15\n\x08timestep\x18\x05 \x01(\x01H\x00\x88\x01\x01\x12\x16\n\trun_speed\x18\x06 \x01(\x01H\x01\x88\x01\x01\x42\x0b\n\t_timestepB\x0c\n\n_run_speed\"3\n\x05\x43olor\x12\t\n\x01r\x18\x01 \x01(\r\x12\t\n\x01g\x18\x02 \x01(\r\x12\t\n\x01\x62\x18\x03 \x01(\r\x12\t\n\x01\x61\x18\x04 \x01(\r\"\x1f\n\x07Scale2D\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\")\n\x04Pose\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\x12\x0b\n\x03yaw\x18\x03 \x01(\x01\"\xe1\x01\n\tCarMarker\x12\x11\n\twheelbase\x18\x01 \x01(\x01\x12\x13\n\x0btrack_width\x18\x02 \x01(\x01\x12\x1b\n\x0ewheel_fl_angle\x18\x03 \x01(\x01H\x00\x88\x01\x01\x12\x1b\n\x0ewheel_fr_angle\x18\x04 \x01(\x01H\x01\x88\x01\x01\x12\x14\n\x07opacity\x18\x05 \x01(\x01H\x02\x88\x01\x01\x12\x19\n\x0ctint_opacity\x18\x06 \x01(\x01H\x03\x88\x01\x01\x42\x11\n\x0f_wheel_fl_angleB\x11\n\x0f_wheel_fr_angleB\n\n\x08_opacityB\x0f\n\r_tint_opacity\"\xd9\x02\n\x06Marker\x12\n\n\x02ns\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\x05\x12!\n\x08\x66rame_id\x18\x0c \x01(\x0e\x32\x0f.lilsim.FrameId\x12 \n\x04type\x18\x03 \x01(\x0e\x32\x12.lilsim.MarkerType\x12\x1a\n\x04pose\x18\x04 \x01(\x0b\x32\x0c.lilsim.Pose\x12\x1c\n\x05\x63olor\x18\x05 \x01(\x0b\x32\r.lilsim.Color\x12\x1e\n\x05scale\x18\x06 \x01(\x0b\x32\x0f.lilsim.Scale2D\x12\x0c\n\x04text\x18\x07 \x01(\t\x12\x1c\n\x06points\x18\x08 \x03(\x0b\x32\x0c.lilsim.Vec2\x12\x1d\n\x06\x63olors\x18\x0b \x03(\x0b\x32\r.lilsim.Color\x12\x0f\n\x07ttl_sec\x18\t \x01(\x01\x12\x0f\n\x07visible\x18\n \x01(\x08\x12#\n\x03\x63\x61r\x18\r \x01(\x0b\x32\x11.lilsim.CarMarkerH\x00\x88\x01\x01\x42\x06\n\x04_car\"N\n\x0bMarkerArray\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x1f\n\x07markers\x18\x02 \x03(\x0b\x32\x0e.lilsim.Marker\"p\n\rMarkerCommand\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\'\n\x04type\x18\x02 \x01(\x0e\x32\x19.lilsim.MarkerCommandType\x12\n\n\x02ns\x18\x03 \x01(\t\x12\n\n\x02id\x18\x04 \x01(\x05*\xf7\x01\n\x10\x41\x64minCommandType\x12\x08\n\x04INIT\x10\x00\x12\t\n\x05RESET\x10\x01\x12\t\n\x05PAUSE\x10\x02\x12\x07\n\x03RUN\x10\x03\x12\x08\n\x04STEP\x10\x04\x12\x0e\n\nSET_PARAMS\x10\x05\x12\x10\n\x0cSET_SETTINGS\x10\x06\x12\x14\n\x10SET_CONTROL_MODE\x10\x07\x12\r\n\tSET_TRACK\x10\x08\x12\x16\n\x12LOAD_PARAM_PROFILE\x10\t\x12\x17\n\x13\x43LEAR_PARAM_PROFILE\x10\n\x12\x10\n\x0cGET_METADATA\x10\x0b\x12\x12\n\x0eSET_SIM_CONFIG\x10\x0c\x12\x12\n\x0eGET_SIM_CONFIG\x10\r*\x1d\n\x07\x46rameId\x12\t\n\x05WORLD\x10\x00\x12\x07\n\x03\x43\x41R\x10\x01*\x8d\x01\n\nMarkerType\x12\x08\n\x04TEXT\x10\x00\x12\t\n\x05\x41RROW\x10\x01\x12\r\n\tRECTANGLE\x10\x02\x12\n\n\x06\x43IRCLE\x10\x03\x12\x0e\n\nLINE_STRIP\x10\x04\x12\x0f\n\x0b\x43IRCLE_LIST\x10\x05\x12\x11\n\rTRIANGLE_LIST\x10\x06\x12\x0b\n\x07MESH_2D\x10\x07\x12\x0e\n\nCAR_SPRITE\x10\x08*K\n\x11MarkerCommandType\x12\x11\n\rDELETE_MARKER\x10\x00\x12\x14\n\x10\x44\x45LETE_NAMESPACE\x10\x01\x12\r\n\tCLEAR_ALL\x10\x02\x62\x06proto3'
+  serialized_pb=b'\n\x0emessages.proto\x12\x06lilsim\"9\n\x06Header\x12\x0c\n\x04tick\x18\x01 \x01(\x04\x12\x10\n\x08sim_time\x18\x02 \x01(\x01\x12\x0f\n\x07version\x18\x03 \x01(\r\"\x1c\n\x04Vec2\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\"\'\n\x0bScalarRange\x12\x0b\n\x03min\x18\x01 \x01(\x01\x12\x0b\n\x03max\x18\x02 \x01(\x01\"Y\n\rParameterMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x15\n\rdefault_value\x18\x02 \x01(\x01\x12#\n\x06limits\x18\x03 \x01(\x0b\x32\x13.lilsim.ScalarRange\"C\n\x0bSettingMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\x12\x15\n\rdefault_index\x18\x03 \x01(\r\">\n\tInputMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12#\n\x06limits\x18\x02 \x01(\x0b\x32\x13.lilsim.ScalarRange\">\n\tStateMeta\x12\x0c\n\x04name\x18\x01 \x01(\t\x12#\n\x06limits\x18\x02 \x01(\x0b\x32\x13.lilsim.ScalarRange\"\xef\x01\n\rModelMetadata\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x12\n\nmodel_name\x18\x02 \x01(\t\x12\x16\n\x0eschema_version\x18\x03 \x01(\x04\x12%\n\x06params\x18\x04 \x03(\x0b\x32\x15.lilsim.ParameterMeta\x12%\n\x08settings\x18\x05 \x03(\x0b\x32\x13.lilsim.SettingMeta\x12!\n\x06inputs\x18\x06 \x03(\x0b\x32\x11.lilsim.InputMeta\x12!\n\x06states\x18\x07 \x03(\x0b\x32\x11.lilsim.StateMeta\"\xa0\x01\n\nSceneState\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x18\n\x10metadata_version\x18\x02 \x01(\x04\x12\x14\n\x0cstate_values\x18\x03 \x03(\x01\x12\x14\n\x0cinput_values\x18\x04 \x03(\x01\x12\x14\n\x0cparam_values\x18\x05 \x03(\x01\x12\x16\n\x0esetting_values\x18\x06 \x03(\x05\"0\n\x0bStateUpdate\x12!\n\x05scene\x18\x01 \x01(\x0b\x32\x12.lilsim.SceneState\"^\n\x0c\x43ontrolAsync\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x18\n\x10metadata_version\x18\x02 \x01(\x04\x12\x14\n\x0cinput_values\x18\x03 \x03(\x01\"S\n\x0e\x43ontrolRequest\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12!\n\x05scene\x18\x02 \x01(\x0b\x32\x12.lilsim.SceneState\"^\n\x0c\x43ontrolReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x18\n\x10metadata_version\x18\x02 \x01(\x04\x12\x14\n\x0cinput_values\x18\x03 \x03(\x01\"-\n\rIndexedDouble\x12\r\n\x05index\x18\x01 \x01(\r\x12\r\n\x05value\x18\x02 \x01(\x01\",\n\x0cIndexedInt32\x12\r\n\x05index\x18\x01 \x01(\r\x12\r\n\x05value\x18\x02 \x01(\x05\"\xb1\x04\n\x0c\x41\x64minCommand\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12&\n\x04type\x18\x02 \x01(\x0e\x32\x18.lilsim.AdminCommandType\x12\x12\n\nstep_count\x18\x03 \x01(\x04\x12,\n\rparam_updates\x18\x04 \x03(\x0b\x32\x15.lilsim.IndexedDouble\x12-\n\x0fsetting_updates\x18\x05 \x03(\x0b\x32\x14.lilsim.IndexedInt32\x12\x11\n\tsync_mode\x18\x06 \x01(\x08\x12\x19\n\x11\x63ontrol_period_ms\x18\x07 \x01(\r\x12\x12\n\ntrack_path\x18\x08 \x01(\t\x12\x1a\n\x12param_profile_path\x18\t \x01(\t\x12!\n\x14use_external_control\x18\n \x01(\x08H\x00\x88\x01\x01\x12\x15\n\x08timestep\x18\x0b \x01(\x01H\x01\x88\x01\x01\x12\x16\n\trun_speed\x18\x0c \x01(\x01H\x02\x88\x01\x01\x12%\n\x18\x63ontrol_period_ms_staged\x18\r \x01(\x01H\x03\x88\x01\x01\x12$\n\x17\x63ontrol_delay_ms_staged\x18\x0e \x01(\x01H\x04\x88\x01\x01\x42\x17\n\x15_use_external_controlB\x0b\n\t_timestepB\x0c\n\n_run_speedB\x1b\n\x19_control_period_ms_stagedB\x1a\n\x18_control_delay_ms_staged\"\xab\x02\n\nAdminReply\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x0f\n\x07success\x18\x02 \x01(\x08\x12\x0f\n\x07message\x18\x03 \x01(\t\x12\'\n\x08metadata\x18\x04 \x01(\x0b\x32\x15.lilsim.ModelMetadata\x12\x15\n\x08timestep\x18\x05 \x01(\x01H\x00\x88\x01\x01\x12\x16\n\trun_speed\x18\x06 \x01(\x01H\x01\x88\x01\x01\x12\x1e\n\x11\x63ontrol_period_ms\x18\x07 \x01(\x01H\x02\x88\x01\x01\x12\x1d\n\x10\x63ontrol_delay_ms\x18\x08 \x01(\x01H\x03\x88\x01\x01\x42\x0b\n\t_timestepB\x0c\n\n_run_speedB\x14\n\x12_control_period_msB\x13\n\x11_control_delay_ms\"3\n\x05\x43olor\x12\t\n\x01r\x18\x01 \x01(\r\x12\t\n\x01g\x18\x02 \x01(\r\x12\t\n\x01\x62\x18\x03 \x01(\r\x12\t\n\x01\x61\x18\x04 \x01(\r\"\x1f\n\x07Scale2D\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\")\n\x04Pose\x12\t\n\x01x\x18\x01 \x01(\x01\x12\t\n\x01y\x18\x02 \x01(\x01\x12\x0b\n\x03yaw\x18\x03 \x01(\x01\"\xe1\x01\n\tCarMarker\x12\x11\n\twheelbase\x18\x01 \x01(\x01\x12\x13\n\x0btrack_width\x18\x02 \x01(\x01\x12\x1b\n\x0ewheel_fl_angle\x18\x03 \x01(\x01H\x00\x88\x01\x01\x12\x1b\n\x0ewheel_fr_angle\x18\x04 \x01(\x01H\x01\x88\x01\x01\x12\x14\n\x07opacity\x18\x05 \x01(\x01H\x02\x88\x01\x01\x12\x19\n\x0ctint_opacity\x18\x06 \x01(\x01H\x03\x88\x01\x01\x42\x11\n\x0f_wheel_fl_angleB\x11\n\x0f_wheel_fr_angleB\n\n\x08_opacityB\x0f\n\r_tint_opacity\"\xd9\x02\n\x06Marker\x12\n\n\x02ns\x18\x01 \x01(\t\x12\n\n\x02id\x18\x02 \x01(\x05\x12!\n\x08\x66rame_id\x18\x0c \x01(\x0e\x32\x0f.lilsim.FrameId\x12 \n\x04type\x18\x03 \x01(\x0e\x32\x12.lilsim.MarkerType\x12\x1a\n\x04pose\x18\x04 \x01(\x0b\x32\x0c.lilsim.Pose\x12\x1c\n\x05\x63olor\x18\x05 \x01(\x0b\x32\r.lilsim.Color\x12\x1e\n\x05scale\x18\x06 \x01(\x0b\x32\x0f.lilsim.Scale2D\x12\x0c\n\x04text\x18\x07 \x01(\t\x12\x1c\n\x06points\x18\x08 \x03(\x0b\x32\x0c.lilsim.Vec2\x12\x1d\n\x06\x63olors\x18\x0b \x03(\x0b\x32\r.lilsim.Color\x12\x0f\n\x07ttl_sec\x18\t \x01(\x01\x12\x0f\n\x07visible\x18\n \x01(\x08\x12#\n\x03\x63\x61r\x18\r \x01(\x0b\x32\x11.lilsim.CarMarkerH\x00\x88\x01\x01\x42\x06\n\x04_car\"N\n\x0bMarkerArray\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\x1f\n\x07markers\x18\x02 \x03(\x0b\x32\x0e.lilsim.Marker\"p\n\rMarkerCommand\x12\x1e\n\x06header\x18\x01 \x01(\x0b\x32\x0e.lilsim.Header\x12\'\n\x04type\x18\x02 \x01(\x0e\x32\x19.lilsim.MarkerCommandType\x12\n\n\x02ns\x18\x03 \x01(\t\x12\n\n\x02id\x18\x04 \x01(\x05*\xf7\x01\n\x10\x41\x64minCommandType\x12\x08\n\x04INIT\x10\x00\x12\t\n\x05RESET\x10\x01\x12\t\n\x05PAUSE\x10\x02\x12\x07\n\x03RUN\x10\x03\x12\x08\n\x04STEP\x10\x04\x12\x0e\n\nSET_PARAMS\x10\x05\x12\x10\n\x0cSET_SETTINGS\x10\x06\x12\x14\n\x10SET_CONTROL_MODE\x10\x07\x12\r\n\tSET_TRACK\x10\x08\x12\x16\n\x12LOAD_PARAM_PROFILE\x10\t\x12\x17\n\x13\x43LEAR_PARAM_PROFILE\x10\n\x12\x10\n\x0cGET_METADATA\x10\x0b\x12\x12\n\x0eSET_SIM_CONFIG\x10\x0c\x12\x12\n\x0eGET_SIM_CONFIG\x10\r*\x1d\n\x07\x46rameId\x12\t\n\x05WORLD\x10\x00\x12\x07\n\x03\x43\x41R\x10\x01*\x8d\x01\n\nMarkerType\x12\x08\n\x04TEXT\x10\x00\x12\t\n\x05\x41RROW\x10\x01\x12\r\n\tRECTANGLE\x10\x02\x12\n\n\x06\x43IRCLE\x10\x03\x12\x0e\n\nLINE_STRIP\x10\x04\x12\x0f\n\x0b\x43IRCLE_LIST\x10\x05\x12\x11\n\rTRIANGLE_LIST\x10\x06\x12\x0b\n\x07MESH_2D\x10\x07\x12\x0e\n\nCAR_SPRITE\x10\x08*K\n\x11MarkerCommandType\x12\x11\n\rDELETE_MARKER\x10\x00\x12\x14\n\x10\x44\x45LETE_NAMESPACE\x10\x01\x12\r\n\tCLEAR_ALL\x10\x02\x62\x06proto3'
 )
 
 _ADMINCOMMANDTYPE = _descriptor.EnumDescriptor(
@@ -103,8 +103,8 @@ _ADMINCOMMANDTYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=2795,
-  serialized_end=3042,
+  serialized_start=3035,
+  serialized_end=3282,
 )
 _sym_db.RegisterEnumDescriptor(_ADMINCOMMANDTYPE)
 
@@ -129,8 +129,8 @@ _FRAMEID = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=3044,
-  serialized_end=3073,
+  serialized_start=3284,
+  serialized_end=3313,
 )
 _sym_db.RegisterEnumDescriptor(_FRAMEID)
 
@@ -190,8 +190,8 @@ _MARKERTYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=3076,
-  serialized_end=3217,
+  serialized_start=3316,
+  serialized_end=3457,
 )
 _sym_db.RegisterEnumDescriptor(_MARKERTYPE)
 
@@ -221,8 +221,8 @@ _MARKERCOMMANDTYPE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=3219,
-  serialized_end=3294,
+  serialized_start=3459,
+  serialized_end=3534,
 )
 _sym_db.RegisterEnumDescriptor(_MARKERCOMMANDTYPE)
 
@@ -1026,6 +1026,20 @@ _ADMINCOMMAND = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='control_period_ms_staged', full_name='lilsim.AdminCommand.control_period_ms_staged', index=12,
+      number=13, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='control_delay_ms_staged', full_name='lilsim.AdminCommand.control_delay_ms_staged', index=13,
+      number=14, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
   ],
   extensions=[
   ],
@@ -1052,9 +1066,19 @@ _ADMINCOMMAND = _descriptor.Descriptor(
       index=2, containing_type=None,
       create_key=_descriptor._internal_create_key,
     fields=[]),
+    _descriptor.OneofDescriptor(
+      name='_control_period_ms_staged', full_name='lilsim.AdminCommand._control_period_ms_staged',
+      index=3, containing_type=None,
+      create_key=_descriptor._internal_create_key,
+    fields=[]),
+    _descriptor.OneofDescriptor(
+      name='_control_delay_ms_staged', full_name='lilsim.AdminCommand._control_delay_ms_staged',
+      index=4, containing_type=None,
+      create_key=_descriptor._internal_create_key,
+    fields=[]),
   ],
   serialized_start=1270,
-  serialized_end=1697,
+  serialized_end=1831,
 )
 
 
@@ -1108,6 +1132,20 @@ _ADMINREPLY = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='control_period_ms', full_name='lilsim.AdminReply.control_period_ms', index=6,
+      number=7, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='control_delay_ms', full_name='lilsim.AdminReply.control_delay_ms', index=7,
+      number=8, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
   ],
   extensions=[
   ],
@@ -1129,9 +1167,19 @@ _ADMINREPLY = _descriptor.Descriptor(
       index=1, containing_type=None,
       create_key=_descriptor._internal_create_key,
     fields=[]),
+    _descriptor.OneofDescriptor(
+      name='_control_period_ms', full_name='lilsim.AdminReply._control_period_ms',
+      index=2, containing_type=None,
+      create_key=_descriptor._internal_create_key,
+    fields=[]),
+    _descriptor.OneofDescriptor(
+      name='_control_delay_ms', full_name='lilsim.AdminReply._control_delay_ms',
+      index=3, containing_type=None,
+      create_key=_descriptor._internal_create_key,
+    fields=[]),
   ],
-  serialized_start=1700,
-  serialized_end=1893,
+  serialized_start=1834,
+  serialized_end=2133,
 )
 
 
@@ -1183,8 +1231,8 @@ _COLOR = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1895,
-  serialized_end=1946,
+  serialized_start=2135,
+  serialized_end=2186,
 )
 
 
@@ -1222,8 +1270,8 @@ _SCALE2D = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1948,
-  serialized_end=1979,
+  serialized_start=2188,
+  serialized_end=2219,
 )
 
 
@@ -1268,8 +1316,8 @@ _POSE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1981,
-  serialized_end=2022,
+  serialized_start=2221,
+  serialized_end=2262,
 )
 
 
@@ -1355,8 +1403,8 @@ _CARMARKER = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=2025,
-  serialized_end=2250,
+  serialized_start=2265,
+  serialized_end=2490,
 )
 
 
@@ -1476,8 +1524,8 @@ _MARKER = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=2253,
-  serialized_end=2598,
+  serialized_start=2493,
+  serialized_end=2838,
 )
 
 
@@ -1515,8 +1563,8 @@ _MARKERARRAY = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2600,
-  serialized_end=2678,
+  serialized_start=2840,
+  serialized_end=2918,
 )
 
 
@@ -1568,8 +1616,8 @@ _MARKERCOMMAND = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=2680,
-  serialized_end=2792,
+  serialized_start=2920,
+  serialized_end=3032,
 )
 
 _PARAMETERMETA.fields_by_name['limits'].message_type = _SCALARRANGE
@@ -1599,6 +1647,12 @@ _ADMINCOMMAND.fields_by_name['timestep'].containing_oneof = _ADMINCOMMAND.oneofs
 _ADMINCOMMAND.oneofs_by_name['_run_speed'].fields.append(
   _ADMINCOMMAND.fields_by_name['run_speed'])
 _ADMINCOMMAND.fields_by_name['run_speed'].containing_oneof = _ADMINCOMMAND.oneofs_by_name['_run_speed']
+_ADMINCOMMAND.oneofs_by_name['_control_period_ms_staged'].fields.append(
+  _ADMINCOMMAND.fields_by_name['control_period_ms_staged'])
+_ADMINCOMMAND.fields_by_name['control_period_ms_staged'].containing_oneof = _ADMINCOMMAND.oneofs_by_name['_control_period_ms_staged']
+_ADMINCOMMAND.oneofs_by_name['_control_delay_ms_staged'].fields.append(
+  _ADMINCOMMAND.fields_by_name['control_delay_ms_staged'])
+_ADMINCOMMAND.fields_by_name['control_delay_ms_staged'].containing_oneof = _ADMINCOMMAND.oneofs_by_name['_control_delay_ms_staged']
 _ADMINREPLY.fields_by_name['header'].message_type = _HEADER
 _ADMINREPLY.fields_by_name['metadata'].message_type = _MODELMETADATA
 _ADMINREPLY.oneofs_by_name['_timestep'].fields.append(
@@ -1607,6 +1661,12 @@ _ADMINREPLY.fields_by_name['timestep'].containing_oneof = _ADMINREPLY.oneofs_by_
 _ADMINREPLY.oneofs_by_name['_run_speed'].fields.append(
   _ADMINREPLY.fields_by_name['run_speed'])
 _ADMINREPLY.fields_by_name['run_speed'].containing_oneof = _ADMINREPLY.oneofs_by_name['_run_speed']
+_ADMINREPLY.oneofs_by_name['_control_period_ms'].fields.append(
+  _ADMINREPLY.fields_by_name['control_period_ms'])
+_ADMINREPLY.fields_by_name['control_period_ms'].containing_oneof = _ADMINREPLY.oneofs_by_name['_control_period_ms']
+_ADMINREPLY.oneofs_by_name['_control_delay_ms'].fields.append(
+  _ADMINREPLY.fields_by_name['control_delay_ms'])
+_ADMINREPLY.fields_by_name['control_delay_ms'].containing_oneof = _ADMINREPLY.oneofs_by_name['_control_delay_ms']
 _CARMARKER.oneofs_by_name['_wheel_fl_angle'].fields.append(
   _CARMARKER.fields_by_name['wheel_fl_angle'])
 _CARMARKER.fields_by_name['wheel_fl_angle'].containing_oneof = _CARMARKER.oneofs_by_name['_wheel_fl_angle']

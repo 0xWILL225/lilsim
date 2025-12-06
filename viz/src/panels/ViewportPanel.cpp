@@ -510,33 +510,41 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
 
   // 2. Steering Wheel
   if (state.steering_wheel_angle.has_value()) {
+      constexpr float kSteeringWheelHeightPx = 100.0f;
+      constexpr float kWheelVerticalSpacingPx = 30.0f;
+      constexpr float kRateBarHeightPx = 30.0f;
+      constexpr float kRateBarPaddingPx = 2.0f;
+      constexpr float kSteeringRateLimitRadPerSec = 6.0f;
+      const ImU32 rateBarFillColor = IM_COL32(200, 100, 255, 200);
+      const ImU32 rateBarFrameColor = IM_COL32(60, 60, 60, 255);
+
       auto& texMgr = TextureManager::getInstance();
       const auto* wheelTex = texMgr.getTexture("steering_wheel.png");
       if (!wheelTex) wheelTex = texMgr.loadTexture("steering_wheel.png");
       
       if (wheelTex && wheelTex->imguiTextureID) {
-          float aspect = (float)wheelTex->width / (float)wheelTex->height;
-          float h = 100.0f;
-          float w = h * aspect;
+          const float textureAspect = static_cast<float>(wheelTex->width) / static_cast<float>(wheelTex->height);
+          const float wheelHeightPx = kSteeringWheelHeightPx;
+          const float wheelWidthPx = wheelHeightPx * textureAspect;
           
-          float centerX = current_x - w * 0.5f;
-          float centerY = current_y - 30.0f - 30.0f - h * 0.5f; // leave space for rate bar
+          const float centerX = current_x - wheelWidthPx * 0.5f;
+          const float centerY = current_y - (kWheelVerticalSpacingPx * 2.0f) - (wheelHeightPx * 0.5f); // leave space for rate bar
           
-          float delta = -(float)state.steering_wheel_angle.value();
-          float cos_d = std::cos(delta);
-          float sin_d = std::sin(delta);
+          const float wheelAngleRadians = -(float)state.steering_wheel_angle.value();
+          const float cosAngle = std::cos(wheelAngleRadians);
+          const float sinAngle = std::sin(wheelAngleRadians);
           
           ImVec2 corners[4];
-          float hw = w * 0.5f;
-          float hh = h * 0.5f;
+          const float halfWidthPx = wheelWidthPx * 0.5f;
+          const float halfHeightPx = wheelHeightPx * 0.5f;
           
-          float lc[4][2] = {{-hw, -hh}, {hw, -hh}, {hw, hh}, {-hw, hh}};
+          float localCorners[4][2] = {{-halfWidthPx, -halfHeightPx}, {halfWidthPx, -halfHeightPx}, {halfWidthPx, halfHeightPx}, {-halfWidthPx, halfHeightPx}};
           for(int i=0; i<4; ++i) {
-              float lx = lc[i][0];
-              float ly = lc[i][1];
-              float rx = lx * cos_d - ly * sin_d;
-              float ry = lx * sin_d + ly * cos_d;
-              corners[i] = ImVec2(centerX + rx, centerY + ry);
+              const float localX = localCorners[i][0];
+              const float localY = localCorners[i][1];
+              const float rotatedX = localX * cosAngle - localY * sinAngle;
+              const float rotatedY = localX * sinAngle + localY * cosAngle;
+              corners[i] = ImVec2(centerX + rotatedX, centerY + rotatedY);
           }
           
           draw_list->AddImageQuad(
@@ -546,31 +554,34 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
           
           // Rate Bar (below wheel)
           if (state.steering_wheel_rate.has_value()) {
-              float rate = (float)state.steering_wheel_rate.value();
-              float limit = 6.0f; // match state range
+              const float rateRadPerSec = static_cast<float>(state.steering_wheel_rate.value());
+
+              const float barWidthPx = wheelWidthPx;
+              const float barHeightPx = kRateBarHeightPx;
+              const float barBottomY = current_y;
+              const float barCenterX = centerX;
               
-              float bw = w;
-              float bh = 30.0f;
-              float by = current_y - bh;
-              float bx = centerX;
+              ImVec2 barMin(barCenterX - barWidthPx * 0.5f, barBottomY - barHeightPx);
+              ImVec2 barMax(barCenterX + barWidthPx * 0.5f, barBottomY);
+              draw_list->AddRect(barMin, barMax, rateBarFrameColor);
               
-              ImVec2 rmin(bx - bw*0.5f, by - bh);
-              ImVec2 rmax(bx + bw*0.5f, by);
-              draw_list->AddRect(rmin, rmax, IM_COL32(60, 60, 60, 255));
-              
-              if (std::abs(rate) > 0.001f) {
-                  float fill = std::clamp(std::abs(rate)/limit, 0.0f, 1.0f);
-                  float fw = (bw*0.5f - 2.0f) * fill;
+              if (std::abs(rateRadPerSec) > 0.001f) {
+                  const float fillRatio = std::clamp(std::abs(rateRadPerSec) / kSteeringRateLimitRadPerSec, 0.0f, 1.0f);
+                  const float filledHalfWidth = (barWidthPx * 0.5f - kRateBarPaddingPx) * fillRatio;
                   
-                  if (rate > 0) { // Left turn rate? Positive usually left
-                      draw_list->AddRectFilled(ImVec2(bx - fw, by - bh + 2), ImVec2(bx, by - 2), IM_COL32(200,100,255,200));
+                  if (rateRadPerSec > 0) { // Left turn rate? Positive usually left
+                      draw_list->AddRectFilled(ImVec2(barCenterX - filledHalfWidth, barBottomY - barHeightPx + kRateBarPaddingPx),
+                                               ImVec2(barCenterX, barBottomY - kRateBarPaddingPx),
+                                               rateBarFillColor);
                   } else {
-                      draw_list->AddRectFilled(ImVec2(bx, by - bh + 2), ImVec2(bx + fw, by - 2), IM_COL32(200,100,255,200));
+                      draw_list->AddRectFilled(ImVec2(barCenterX, barBottomY - barHeightPx + kRateBarPaddingPx),
+                                               ImVec2(barCenterX + filledHalfWidth, barBottomY - kRateBarPaddingPx),
+                                               rateBarFillColor);
                   }
               }
           }
           
-          current_x -= (w + gap);
+          current_x -= (wheelWidthPx + gap);
       }
   }
 

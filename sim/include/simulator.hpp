@@ -7,6 +7,8 @@
 #include <string>
 #include <mutex>
 #include <unordered_map>
+#include <deque>
+#include <chrono>
 
 #include "CarDefaults.hpp" 
 #include "scene.hpp"
@@ -87,6 +89,12 @@ public:
   void requestDt(double dtSeconds);
   void setRunSpeed(double multiplier);
   double getRunSpeed() const;
+  void requestControlPeriodMs(double periodMs);
+  double getControlPeriodMilliseconds() const;
+  double getRequestedControlPeriodMilliseconds() const;
+  void requestControlDelayMs(double delayMs);
+  double getControlDelayMilliseconds() const;
+  double getRequestedControlDelayMilliseconds() const;
   
   uint64_t getTicksRemaining() const {
     return m_stepTarget.load(std::memory_order_relaxed);
@@ -129,13 +137,7 @@ public:
   void clearParamProfile();
   std::string getActiveParamProfilePath() const;
   std::string getPendingParamProfilePath() const;
-  /**
-   * @brief Retrieve the latest pending parameter snapshot if it changed.
-   */
   bool consumePendingParamSnapshot(std::vector<double>& out);
-  /**
-   * @brief Retrieve the latest pending setting snapshot if it changed.
-   */
   bool consumePendingSettingSnapshot(std::vector<int32_t>& out);
   
   bool checkAndClearModelChanged() {
@@ -155,15 +157,6 @@ public:
   }
   bool isExternalControlEnabled() const {
     return m_externalControlEnabled.load(std::memory_order_relaxed);
-  }
-  void setControlPeriodMs(uint32_t period_ms) {
-    m_controlPeriodMs.store(period_ms, std::memory_order_relaxed);
-  }
-  uint32_t getControlPeriodMs() const {
-    return m_controlPeriodMs.load(std::memory_order_relaxed);
-  }
-  uint32_t getControlPeriodTicks() const {
-    return m_controlPeriodTicks.load(std::memory_order_relaxed);
   }
   bool isSyncClientConnected() const;
   std::shared_ptr<zmq::context_t> getCommContext() const;
@@ -202,6 +195,19 @@ private:
   bool requestSyncControl(const CarModelDescriptor* desc,
                           double simTime,
                           uint64_t tick);
+  void pollSyncReplies(const CarModelDescriptor* desc);
+  bool ensureSyncControlReady(const CarModelDescriptor* desc, uint64_t tick);
+  void dispatchSyncControlRequest(const CarModelDescriptor* desc,
+                                  double simTime,
+                                  uint64_t tick);
+  void handleSyncReply(const CarModelDescriptor* desc,
+                       const lilsim::ControlReply& reply);
+  bool waitForSyncReply(const CarModelDescriptor* desc,
+                        uint64_t requestTick);
+  void clearSyncControlQueue();
+  void applyPendingTimingConfig(double dtSeconds);
+  uint32_t millisecondsToTicks(double ms, double dtSeconds) const;
+  double ticksToMilliseconds(uint32_t ticks, double dtSeconds) const;
 
   scene::SceneDB& m_db;
   std::atomic<bool> m_running{false};
@@ -258,13 +264,30 @@ private:
   std::atomic<bool> m_commEnabled{false};
   std::atomic<bool> m_syncMode{false};
   std::atomic<bool> m_externalControlEnabled{false};
-  std::atomic<uint32_t> m_controlPeriodMs{100};
-  std::atomic<uint32_t> m_controlPeriodTicks{10}; 
+  std::atomic<uint32_t> m_controlPeriodTicks{2}; 
+  std::atomic<uint32_t> m_controlDelayTicks{1};
+  std::optional<uint32_t> m_pendingControlPeriodTicks;
+  std::optional<uint32_t> m_pendingControlDelayTicks;
+  mutable std::mutex m_controlTimingMutex;
+  uint64_t m_nextControlRequestTick{0};
   std::atomic<double> m_runSpeed{1.0};
   std::atomic<double> m_dt{common::CarDefaults::dt};
   mutable std::mutex m_dtMutex;
   std::optional<double> m_pendingDt;
   std::vector<double> m_lastControlInput;
+  /**
+   * @brief Metadata for a sync-control request that is waiting to be applied.
+   */
+  struct PendingSyncRequest {
+    uint64_t requestTick{0};
+    uint64_t applyTick{0};
+    uint64_t metadataVersion{0};
+    bool hasReply{false};
+    std::vector<double> replyInputs;
+    bool timeoutArmed{false};
+    std::chrono::steady_clock::time_point timeoutDeadline;
+  };
+  std::deque<PendingSyncRequest> m_pendingSyncRequests;
   std::atomic<uint64_t> m_metadataVersion{0};
   mutable std::mutex m_metadataMutex;
   lilsim::ModelMetadata m_cachedMetadata;

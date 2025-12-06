@@ -18,6 +18,12 @@ CommServer::~CommServer() {
   }
 }
 
+/**
+ * @brief Initialize all ZeroMQ sockets and bind network/inproc endpoints.
+ *
+ * @return true if every socket binds successfully, false otherwise (and the
+ *         server is left stopped).
+ */
 bool CommServer::start() {
   if (m_running.load(std::memory_order_relaxed)) {
     spdlog::warn("[comm] CommServer already running");
@@ -65,6 +71,9 @@ bool CommServer::start() {
   }
 }
 
+/**
+ * @brief Shut down all sockets and mark the server as not running.
+ */
 void CommServer::stop() {
   if (!m_running.load(std::memory_order_relaxed)) {
     return;
@@ -104,6 +113,9 @@ void CommServer::stop() {
   spdlog::info("[comm] CommServer stopped");
 }
 
+/**
+ * @brief Publish a state update to subscribers (non-blocking fire-and-forget).
+ */
 void CommServer::publishState(const lilsim::StateUpdate& update) {
   if (!m_running.load(std::memory_order_relaxed) || !m_statePub) {
     return;
@@ -116,6 +128,9 @@ void CommServer::publishState(const lilsim::StateUpdate& update) {
   }
 }
 
+/**
+ * @brief Publish the latest metadata snapshot so clients can refresh descriptors.
+ */
 void CommServer::publishMetadata(const lilsim::ModelMetadata& metadata) {
   if (!m_running.load(std::memory_order_relaxed) || !m_metadataPub) {
     return;
@@ -128,36 +143,75 @@ void CommServer::publishMetadata(const lilsim::ModelMetadata& metadata) {
   }
 }
 
-bool CommServer::requestControl(const lilsim::ControlRequest& request,
-                                lilsim::ControlReply& reply,
-                                int timeout_ms) {
+/**
+ * @brief Queue a synchronous control request to the connected DEALER peer.
+ *
+ * @return true if the message was queued, false if the socket is unavailable.
+ */
+bool CommServer::sendControlRequest(const lilsim::ControlRequest& request) {
   if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
     m_syncClientConnected.store(false, std::memory_order_relaxed);
     return false;
   }
-
   try {
-    // Send control request (DEALER doesn't enforce strict ordering)
-    if (!sendProto(*m_controlDealer, request, zmq::send_flags::dontwait)) {
+    bool sent = sendProto(*m_controlDealer, request, zmq::send_flags::dontwait);
+    if (!sent) {
       m_syncClientConnected.store(false, std::memory_order_relaxed);
-      return false;
     }
-
-    // Wait for reply with timeout
-    bool success = recvProtoTimeout(*m_controlDealer, reply, timeout_ms);
-    
-    // Update connection state based on result
-    m_syncClientConnected.store(success, std::memory_order_relaxed);
-    
-    return success;
-
+    return sent;
   } catch (const zmq::error_t& e) {
-    spdlog::error("[comm] Error in control request: {}", e.what());
+    spdlog::error("[comm] Error sending control request: {}", e.what());
     m_syncClientConnected.store(false, std::memory_order_relaxed);
     return false;
   }
 }
 
+/**
+ * @brief Poll for an outstanding synchronous control reply without blocking.
+ *
+ * @return Parsed reply if one was available immediately, std::nullopt otherwise.
+ */
+std::optional<lilsim::ControlReply> CommServer::pollControlReply() {
+  if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
+    return std::nullopt;
+  }
+  try {
+    lilsim::ControlReply reply;
+    if (recvProto(*m_controlDealer, reply, zmq::recv_flags::dontwait)) {
+      m_syncClientConnected.store(true, std::memory_order_relaxed);
+      return reply;
+    }
+  } catch (const zmq::error_t& e) {
+    spdlog::error("[comm] Error polling control reply: {}", e.what());
+    m_syncClientConnected.store(false, std::memory_order_relaxed);
+  }
+  return std::nullopt;
+}
+
+/**
+ * @brief Block for up to @p timeout_ms while waiting for a control reply.
+ *
+ * @return true if a reply was received within the window, false on timeout/error.
+ */
+bool CommServer::waitControlReply(lilsim::ControlReply& reply, int timeout_ms) {
+  if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
+    m_syncClientConnected.store(false, std::memory_order_relaxed);
+    return false;
+  }
+  try {
+    bool received = recvProtoTimeout(*m_controlDealer, reply, timeout_ms);
+    m_syncClientConnected.store(received, std::memory_order_relaxed);
+    return received;
+  } catch (const zmq::error_t& e) {
+    spdlog::error("[comm] Error waiting for control reply: {}", e.what());
+    m_syncClientConnected.store(false, std::memory_order_relaxed);
+    return false;
+  }
+}
+
+/**
+ * @brief Send a lightweight heartbeat to determine if a sync client is present.
+ */
 bool CommServer::probeConnection(int timeout_ms) {
   if (!m_running.load(std::memory_order_relaxed) || !m_controlDealer) {
     return false;
@@ -193,6 +247,9 @@ bool CommServer::probeConnection(int timeout_ms) {
   }
 }
 
+/**
+ * @brief Poll the REP socket for a pending admin command without blocking.
+ */
 std::optional<lilsim::AdminCommand> CommServer::pollAdminCommand() {
   if (!m_running.load(std::memory_order_relaxed) || !m_adminRep) {
     return std::nullopt;
@@ -216,6 +273,9 @@ std::optional<lilsim::AdminCommand> CommServer::pollAdminCommand() {
   return std::nullopt;
 }
 
+/**
+ * @brief Send an admin reply paired with the last command retrieved via poll.
+ */
 void CommServer::replyAdmin(const lilsim::AdminReply& reply) {
   if (!m_running.load(std::memory_order_relaxed) || !m_adminRep) {
     return;
@@ -234,6 +294,9 @@ void CommServer::replyAdmin(const lilsim::AdminReply& reply) {
   }
 }
 
+/**
+ * @brief Poll the async control SUB socket for new overrides.
+ */
 std::optional<lilsim::ControlAsync> CommServer::pollAsyncControl() {
   if (!m_running.load(std::memory_order_relaxed) || !m_controlAsyncSub) {
     return std::nullopt;
@@ -261,6 +324,11 @@ MarkerSubscriber::~MarkerSubscriber() {
   stop();
 }
 
+/**
+ * @brief Bind the marker subscriber socket to the configured endpoint.
+ *
+ * @return true if the socket was created and bound, false otherwise.
+ */
 bool MarkerSubscriber::start() {
   if (m_running.load(std::memory_order_relaxed)) {
     spdlog::warn("[comm] MarkerSubscriber already running");
@@ -284,6 +352,9 @@ bool MarkerSubscriber::start() {
   }
 }
 
+/**
+ * @brief Close the marker subscriber socket and tear down the local context.
+ */
 void MarkerSubscriber::stop() {
   if (!m_running.load(std::memory_order_relaxed)) {
     return;
@@ -309,6 +380,11 @@ void MarkerSubscriber::stop() {
   spdlog::info("[comm] MarkerSubscriber stopped");
 }
 
+/**
+ * @brief Attempt to read a marker message without blocking.
+ *
+ * @return PollResult describing the message type (or None if no data).
+ */
 MarkerSubscriber::PollResult MarkerSubscriber::poll() {
   PollResult result;
   result.type = MessageType::None;

@@ -22,7 +22,7 @@ In the GUI:
 1. Open the "Communication" section in the Admin panel
 2. Toggle "Enable ZMQ" to start the communication server
 3. Select "Synchronous" or "Asynchronous" mode (Asynchronous is default)
-4. Configure control period (milliseconds) for synchronous mode
+4. Configure timestep (ms), control period (ms), and control delay (ms) in the Simulation Control panel (changes apply on reset)
 
 ### Operating Modes
 
@@ -34,12 +34,12 @@ In the GUI:
 - Non-blocking, suitable for real-time visualization
 
 #### Synchronous Mode
-- Simulator requests control every K ticks (computed from milliseconds and dt)
-- Waits for client response with 50ms polling intervals, 500ms total timeout
-- On timeout: pauses simulation and marks client as disconnected
+- Simulator queues control requests every *control period* milliseconds (converted to ticks using dt)
+- Requested commands are applied after the configured *control delay* (also tick-aligned)
+- While waiting for the apply tick, the simulator continues stepping with the previous control
+- Once the delay elapses the simulation stalls until a reply arrives (1 second timeout window)
+- On timeout: simulation pauses automatically and logs a warning
 - Uses DEALER/DEALER pattern for robust timeout handling (no socket resets)
-- Heartbeat probes (tick=0) sent every 200ms from UI to detect client connection
-- Client automatically responds to heartbeats and control requests
 - Deterministic, ideal for step-through debugging in Jupyter
 
 ### Message Format

@@ -127,8 +127,10 @@ message AdminCommand {
   string           track_path = 8;  // for SET_TRACK
   string           param_profile_path = 9; // for LOAD_PARAM_PROFILE
   optional bool    use_external_control = 10; // true = ZeroMQ client, false = GUI
-  optional double  timestep = 11; // seconds, for SET_SIM_CONFIG
+  optional double  timestep = 11; // milliseconds, for SET_SIM_CONFIG
   optional double  run_speed = 12; // multiplier, for SET_SIM_CONFIG
+  optional double  control_period_ms_staged = 13; // milliseconds, applies on reset
+  optional double  control_delay_ms_staged  = 14; // milliseconds, applies on reset
 }
 
 message AdminReply {
@@ -136,8 +138,10 @@ message AdminReply {
   bool   success = 2;
   string message = 3;
   ModelMetadata metadata = 4;
-  optional double timestep = 5;
+  optional double timestep = 5; // milliseconds
   optional double run_speed = 6;
+  optional double control_period_ms = 7;
+  optional double control_delay_ms  = 8;
 }
 
 // ============ Marker visualization ============

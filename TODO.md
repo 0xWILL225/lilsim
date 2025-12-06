@@ -77,6 +77,7 @@
 	- Showing how to set up CMake to install custom car model and how to use the Python SDK in the example notebook
 - Can the C++ Eigen dependency be removed? 
 	- SE2 probably not used anymore right
+- Replace CarDefaults
 - Make it compile and run on Windows
 	- Jupyter notebook should also work
 - Clean up the repository and remove team specific skins
@@ -86,6 +87,9 @@
 	- Updated README.md with simple instructions and added ROADMAP.md
 	- Remove obvious LLM code comments (embarrassing)
 	- Make a nice GIF for the README that shows a pretty skidpad run with the default skin
+- Actually read through and clean up the code, fully understanding everything
+	- This will take time, let it.
+	- Change everything to match clang format, and make all variables snake case, with `m_` prepended to private class variables
 	  
 **When these things are ready, along with any necessary updates to the Python SDK, the first release should happen, and it should be shown to the Rennteam and LiU Formula Student. At that point, it's ready for control algorithm development through a Python notebook.**
 #### Roadmap
