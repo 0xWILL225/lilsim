@@ -6,7 +6,7 @@
 // by C, C++, Rust, etc.
 
 #include <stddef.h>   // size_t
-#include <stdint.h>   // int32_t
+#include <stdint.h>   // uint32_t
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +36,7 @@ extern "C" {
 //  - Values (param_values, setting_values, input_values, state_values)
 //    -> written by sim/GUI, read/written by plugin.
 //
-// All numeric values are double except settings (int32 indices).
+// All numeric values are double except settings (uint32 indices).
 
 typedef struct CarModelDescriptor {
 
@@ -79,15 +79,15 @@ typedef struct CarModelDescriptor {
   // setting_option_names[k]         : option label (for GUI dropdown)
   //
   // For each setting s in [0, num_settings):
-  //   all k where setting_option_setting_index[k] == (int32_t)s
+  //   all k where setting_option_setting_index[k] == s
   //   form the list of options for that setting, in the given order.
 
   size_t      num_settings;
   const char* const* setting_names;    // [num_settings]
-  int32_t*          setting_values;    // [num_settings]
+  uint32_t*          setting_values;   // [num_settings]
 
   size_t      num_setting_options;
-  const int32_t*     setting_option_setting_index; // [num_setting_options]
+  const uint32_t*    setting_option_setting_index; // [num_setting_options]
   const char* const* setting_option_names;         // [num_setting_options]
 
 

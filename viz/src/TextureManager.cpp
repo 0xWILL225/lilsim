@@ -41,7 +41,7 @@ std::filesystem::path TextureManager::getAssetsDirectory() const {
   char result[PATH_MAX];
   ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
   if (count != -1) {
-    exePath = std::filesystem::path(std::string(result, count));
+    exePath = std::filesystem::path(std::string(result, static_cast<size_t>(count)));
   }
 #elif defined(__APPLE__)
   char result[PATH_MAX];
@@ -153,8 +153,8 @@ const TextureManager::TextureData* TextureManager::loadTexture(const std::string
   // Create WebGPU texture
   WGPUTextureDescriptor textureDesc = {};
   textureDesc.label = WGPUStringView{assetPath.c_str(), assetPath.size()};
-  textureDesc.size.width = width;
-  textureDesc.size.height = height;
+  textureDesc.size.width = static_cast<uint32_t>(width);
+  textureDesc.size.height = static_cast<uint32_t>(height);
   textureDesc.size.depthOrArrayLayers = 1;
   textureDesc.mipLevelCount = 1;
   textureDesc.sampleCount = 1;

@@ -111,7 +111,7 @@ public:
 
 private:
   std::unique_ptr<zmq::context_t> m_context;
-  std::unique_ptr<zmq::socket_t> m_markerSub;
+  std::unique_ptr<zmq::socket_t> m_marker_sub;
   std::atomic<bool> m_running{false};
 };
 

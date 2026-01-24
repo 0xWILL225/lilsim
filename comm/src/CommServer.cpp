@@ -337,9 +337,9 @@ bool MarkerSubscriber::start() {
 
   try {
     // Create marker subscriber (SUB)
-    m_markerSub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::sub);
-    m_markerSub->bind(endpoints::MARKER_SUB);
-    m_markerSub->set(zmq::sockopt::subscribe, ""); // Subscribe to all messages
+    m_marker_sub = std::make_unique<zmq::socket_t>(*m_context, zmq::socket_type::sub);
+    m_marker_sub->bind(endpoints::MARKER_SUB);
+    m_marker_sub->set(zmq::sockopt::subscribe, ""); // Subscribe to all messages
     spdlog::info("[comm] Marker subscriber bound to {}", endpoints::MARKER_SUB);
 
     m_running.store(true, std::memory_order_relaxed);
@@ -363,9 +363,9 @@ void MarkerSubscriber::stop() {
   m_running.store(false, std::memory_order_relaxed);
 
   try {
-    if (m_markerSub) {
-      m_markerSub->close();
-      m_markerSub.reset();
+    if (m_marker_sub) {
+      m_marker_sub->close();
+      m_marker_sub.reset();
     }
     
     // Explicitly shutdown context to avoid blocking on destruction
@@ -389,14 +389,14 @@ MarkerSubscriber::PollResult MarkerSubscriber::poll() {
   PollResult result;
   result.type = MessageType::None;
   
-  if (!m_running.load(std::memory_order_relaxed) || !m_markerSub) {
+  if (!m_running.load(std::memory_order_relaxed) || !m_marker_sub) {
     return result;
   }
 
   try {
     // Receive topic frame (non-blocking)
     zmq::message_t topic_msg;
-    auto res = m_markerSub->recv(topic_msg, zmq::recv_flags::dontwait);
+    auto res = m_marker_sub->recv(topic_msg, zmq::recv_flags::dontwait);
     if (!res) {
       return result;
     }
@@ -405,7 +405,7 @@ MarkerSubscriber::PollResult MarkerSubscriber::poll() {
     
     // Receive data frame (non-blocking)
     zmq::message_t data_msg;
-    res = m_markerSub->recv(data_msg, zmq::recv_flags::dontwait);
+    res = m_marker_sub->recv(data_msg, zmq::recv_flags::dontwait);
     if (!res) {
       spdlog::warn("[comm] Received topic frame but no data frame");
       return result;

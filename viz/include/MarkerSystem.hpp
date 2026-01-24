@@ -195,6 +195,16 @@ public:
    */
   void setMarkerVisible(const std::string& ns, int id, bool visible);
 
+  /**
+   * @brief Replace namespace visibility table with a snapshot (used for config load).
+   */
+  void applyNamespaceVisibilitySnapshot(const std::map<std::string, bool>& snapshot);
+
+  /**
+   * @brief Retrieve the current namespace visibility table for persistence.
+   */
+  std::map<std::string, bool> snapshotNamespaceVisibility() const;
+
 private:
   std::map<MarkerKey, Marker> m_markers;
   std::map<std::string, bool> m_namespaceVisibility;  // Default: visible

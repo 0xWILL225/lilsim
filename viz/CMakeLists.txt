@@ -3,6 +3,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(X11 REQUIRED)
+find_package(yaml-cpp CONFIG REQUIRED)
 
 # Add wgpu-native
 set(WGPU_NATIVE_DIR ${CMAKE_SOURCE_DIR}/third_party/wgpu-native)
@@ -30,31 +31,37 @@ add_library(viz STATIC
   ${CMAKE_SOURCE_DIR}/third_party/imgui_toggle/imgui_toggle.cpp
 )
 
-# Disable clang-tidy for third-party files
+# Disable clang-tidy and warnings for third-party files
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu/imgui_impl_wgpu.cpp
   PROPERTIES
   SKIP_LINTING ON
   COMPILE_DEFINITIONS "IMGUI_IMPL_WEBGPU_BACKEND_WGPU"
+  COMPILE_FLAGS "-w"
 )
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/third_party/ImGuiFileDialog/ImGuiFileDialog.cpp
   PROPERTIES
   SKIP_LINTING ON
+  COMPILE_FLAGS "-w"
 )
 set_source_files_properties(
   ${CMAKE_SOURCE_DIR}/third_party/imgui_toggle/imgui_toggle.cpp
   PROPERTIES
   SKIP_LINTING ON
+  COMPILE_FLAGS "-w"
 )
 
 target_include_directories(viz PUBLIC 
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   ${CMAKE_SOURCE_DIR}
+  ${CMAKE_SOURCE_DIR}/sim/include
+)
+# Third-party includes as SYSTEM to suppress warnings
+target_include_directories(viz SYSTEM PUBLIC
   ${CMAKE_SOURCE_DIR}/third_party
   ${CMAKE_SOURCE_DIR}/third_party/wgpu-native/include
   ${CMAKE_SOURCE_DIR}/third_party/imgui_wgpu
-  ${CMAKE_SOURCE_DIR}/sim/include
 )
 target_compile_definitions(viz PRIVATE IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
 target_link_libraries(viz PUBLIC 
@@ -69,6 +76,7 @@ target_link_libraries(viz PUBLIC
   ImGuiFileDialog
   wgpu_native
   spdlog::spdlog
+  yaml-cpp::yaml-cpp
   ${X11_LIBRARIES}
 )
 setup_warnings(viz)

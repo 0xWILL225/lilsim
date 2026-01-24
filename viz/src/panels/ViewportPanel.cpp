@@ -90,7 +90,7 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
     draw_list->AddLine(p3, p4, grid_color, 1.0f);
   }
 
-  if (m_showCones && *m_showCones && state.cones) {
+  if (m_show_cones && *m_show_cones && state.cones) {
     for (const auto& cone : *state.cones) {
       ImVec2 center = worldToScreen((float)cone.x, (float)cone.y);
       float base_radius, stripe_radius, top_radius;
@@ -347,11 +347,11 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
       return true;
   };
 
-  if (m_markerSystem) {
+  if (m_marker_system) {
     struct Pose2D { double x, y, yaw; };
     Pose2D carPose{state.x, state.y, state.yaw};
     
-    auto transformPoint = [&](double x, double y, int frame) -> std::pair<double, double> {
+    auto transform_point = [&](double x, double y, int frame) -> std::pair<double, double> {
         if (frame == 1) { // CAR frame
             double cx = x * std::cos(carPose.yaw) - y * std::sin(carPose.yaw);
             double cy = x * std::sin(carPose.yaw) + y * std::cos(carPose.yaw);
@@ -360,9 +360,9 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
         return {x, y};
     };
     
-    const auto& markers = m_markerSystem->getMarkers();
+    const auto& markers = m_marker_system->getMarkers();
     for (const auto& [key, marker] : markers) {
-        if (!m_markerSystem->isMarkerVisible(key.ns, key.id)) {
+        if (!m_marker_system->isMarkerVisible(key.ns, key.id)) {
             continue;
         }
         if (marker.type == viz::lilsim::CAR_SPRITE && marker.car.has_value()) {
@@ -398,7 +398,7 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
             continue;
         }
         if (marker.type == viz::lilsim::CIRCLE) {
-            auto [wx, wy] = transformPoint(marker.pose.x(), marker.pose.y(), marker.frame_id);
+            auto [wx, wy] = transform_point(marker.pose.x(), marker.pose.y(), marker.frame_id);
             float diameter = marker.scale.x > 0.0f ? marker.scale.x : marker.scale.y;
             drawCircleMarker(wx, wy, diameter, marker.color);
             continue;
@@ -410,7 +410,7 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
             }
             for (size_t i = 0; i < marker.points.size(); ++i) {
                 const auto& pt = marker.points[i];
-                auto [wx, wy] = transformPoint(pt.x, pt.y, marker.frame_id);
+                auto [wx, wy] = transform_point(pt.x, pt.y, marker.frame_id);
                 Color color = marker.color;
                 if (!marker.colors.empty()) {
                     color = marker.colors[std::min(i, marker.colors.size() - 1)];
@@ -423,28 +423,30 @@ void ViewportPanel::draw(float x, float y, float width, float height, const Rend
             std::vector<ImVec2> screenPoints;
             screenPoints.reserve(marker.points.size());
             for (const auto& pt : marker.points) {
-                auto [wx, wy] = transformPoint(pt.x, pt.y, marker.frame_id);
+                auto [wx, wy] = transform_point(pt.x, pt.y, marker.frame_id);
                 screenPoints.push_back(worldToScreen((float)wx, (float)wy));
             }
 
-            auto colorAt = [&](size_t idx) -> ImU32 {
-                if (!marker.colors.empty()) {
-                    const auto& c = marker.colors[std::min(idx, marker.colors.size() - 1)];
+            // Workaround: structured bindings can't be captured in lambdas with some compilers
+            const auto& marker_ref = marker;
+            auto colorAt = [&marker_ref](size_t idx) -> ImU32 {
+                if (!marker_ref.colors.empty()) {
+                    const auto& c = marker_ref.colors[std::min(idx, marker_ref.colors.size() - 1)];
                     return IM_COL32(c.r, c.g, c.b, c.a);
                 }
-                return IM_COL32(marker.color.r, marker.color.g, marker.color.b, marker.color.a);
+                return IM_COL32(marker_ref.color.r, marker_ref.color.g, marker_ref.color.b, marker_ref.color.a);
             };
 
-            const float lineWidth = marker.scale.x * cam_zoom;
+            const float line_width = marker.scale.x * cam_zoom;
             for (size_t i = 0; i + 1 < screenPoints.size(); ++i) {
                 ImU32 segColor = colorAt(i);
-                draw_list->AddLine(screenPoints[i], screenPoints[i + 1], segColor, lineWidth);
+                draw_list->AddLine(screenPoints[i], screenPoints[i + 1], segColor, line_width);
             }
         }
     }
   }
 
-  if (m_showCar && *m_showCar) {
+  if (m_show_car && *m_show_car) {
       CarSpriteParams params;
       params.x = car_x;
       params.y = car_y;

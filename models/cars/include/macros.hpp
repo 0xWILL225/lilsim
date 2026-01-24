@@ -158,22 +158,22 @@
     }; \
     \
     /* Option Counts per Setting */ \
-    static const int32_t g_setting_option_counts[] = { \
+    static const uint32_t g_setting_option_counts[] = { \
         SETTING_LIST(INTERNAL_SETTING_COUNT_BLOCK, INTERNAL_OPTION_COUNT) \
     }; \
     \
     /* Num Options */ \
-    static const int32_t g_num_setting_options = \
-        static_cast<int32_t>(sizeof(g_setting_option_names) / sizeof(g_setting_option_names[0])); \
+    static const uint32_t g_num_setting_options = \
+        static_cast<uint32_t>(sizeof(g_setting_option_names) / sizeof(g_setting_option_names[0])); \
     \
     /* Helper to build the setting_index map at runtime */ \
-    static const std::vector<int32_t>& get_setting_option_indices() { \
-        static const std::vector<int32_t> indices = [](){ \
-            std::vector<int32_t> vec; \
+    static const std::vector<uint32_t>& get_setting_option_indices() { \
+        static const std::vector<uint32_t> indices = [](){ \
+            std::vector<uint32_t> vec; \
             vec.reserve(g_num_setting_options); \
-            for (int s = 0; s < S_COUNT; ++s) { \
-                int count = g_setting_option_counts[s]; \
-                for (int k = 0; k < count; ++k) { \
+            for (uint32_t s = 0; s < S_COUNT; ++s) { \
+                uint32_t count = g_setting_option_counts[s]; \
+                for (uint32_t k = 0; k < count; ++k) { \
                     vec.push_back(s); \
                 } \
             } \

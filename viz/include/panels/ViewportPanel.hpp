@@ -32,9 +32,9 @@ public:
 
   ViewportPanel(const MarkerSystem* markerSystem = nullptr,
                 const bool* showCar = nullptr, const bool* showCones = nullptr)
-    : m_markerSystem(markerSystem)
-    , m_showCar(showCar)
-    , m_showCones(showCones) {
+    : m_marker_system(markerSystem)
+    , m_show_car(showCar)
+    , m_show_cones(showCones) {
   }
 
   void draw(float x, float y, float width, float height, const RenderState& state);
@@ -53,9 +53,9 @@ public:
   }
 
 private:
-  const MarkerSystem* m_markerSystem;
-  const bool* m_showCar;
-  const bool* m_showCones;
+  const MarkerSystem* m_marker_system;
+  const bool* m_show_car;
+  const bool* m_show_cones;
   
   bool m_mouseLeftPressed = false;
   float m_lastMouseX = 0.0f;

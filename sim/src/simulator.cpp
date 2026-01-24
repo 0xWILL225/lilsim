@@ -13,6 +13,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "simulator.hpp"
+#include "Constants.hpp"
 #include "comm/CommServer.hpp"
 #include "TrackLoader.hpp"
 #include "models/cars/include/base.h"
@@ -37,7 +38,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
     YAML::Node root = YAML::LoadFile(path);
 
     if (auto modelNode = root["model"]; modelNode && modelNode.IsScalar()) {
-        profile->declaredModel = modelNode.as<std::string>();
+        profile->declared_model = modelNode.as<std::string>();
     }
 
     auto parseScalarDouble = [](const YAML::Node& value) -> std::optional<double> {
@@ -96,7 +97,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
                     override.defaultValue = parsed;
                 }
             }
-            profile->paramOverrides[name] = override;
+            profile->param_overrides[name] = override;
         }
     }
 
@@ -106,7 +107,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
             std::string name = entry.first.as<std::string>();
             RangeOverride override{};
             parseRange(entry.second, override);
-            profile->inputOverrides[name] = override;
+            profile->input_overrides[name] = override;
         }
     }
 
@@ -116,7 +117,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
             std::string name = entry.first.as<std::string>();
             RangeOverride override{};
             parseRange(entry.second, override);
-            profile->stateOverrides[name] = override;
+            profile->state_overrides[name] = override;
         }
     }
 
@@ -125,7 +126,7 @@ std::shared_ptr<MetadataProfile> loadMetadataProfileFromYaml(const std::string& 
             if (!entry.first.IsScalar()) continue;
             std::string name = entry.first.as<std::string>();
             if (auto defNode = entry.second["default"]; defNode && defNode.IsScalar()) {
-                profile->settingDefaults[name] = defNode.as<std::string>();
+                profile->setting_defaults[name] = defNode.as<std::string>();
             }
         }
     }
@@ -486,7 +487,7 @@ bool Simulator::loadModel(const std::string& modelPath) {
         restoreBaseMetadata(desc);
     }
     {
-        std::lock_guard<std::mutex> profileLock(m_profileMutex);
+        std::lock_guard<std::mutex> profileLock(m_profile_mutex);
         m_activeProfile.reset();
         m_pendingProfile.reset();
         m_activeProfilePath.clear();
@@ -521,7 +522,7 @@ void Simulator::setParam(size_t index, double value) {
     stageParamUpdate(index, value);
 }
 
-void Simulator::setSetting(size_t index, int32_t value) {
+void Simulator::setSetting(size_t index, uint32_t value) {
     stageSettingUpdate(index, value);
 }
 
@@ -544,7 +545,7 @@ void Simulator::setParamProfileFile(const std::string& path) {
     }
 
     {
-        std::lock_guard<std::mutex> lock(m_profileMutex);
+        std::lock_guard<std::mutex> lock(m_profile_mutex);
         m_pendingProfile = profile;
         m_pendingProfilePath = path;
         m_profileClearRequested = false;
@@ -561,7 +562,7 @@ void Simulator::setParamProfileFile(const std::string& path) {
 void Simulator::clearParamProfile() {
     bool hadProfile = false;
     {
-        std::lock_guard<std::mutex> lock(m_profileMutex);
+        std::lock_guard<std::mutex> lock(m_profile_mutex);
         hadProfile = static_cast<bool>(m_activeProfile) ||
                      static_cast<bool>(m_pendingProfile) ||
                      m_profileClearRequested;
@@ -581,7 +582,7 @@ void Simulator::clearParamProfile() {
  * @brief Retrieve the path of the currently active profile (if any).
  */
 std::string Simulator::getActiveParamProfilePath() const {
-    std::lock_guard<std::mutex> lock(m_profileMutex);
+    std::lock_guard<std::mutex> lock(m_profile_mutex);
     return m_activeProfilePath;
 }
 
@@ -589,7 +590,7 @@ std::string Simulator::getActiveParamProfilePath() const {
  * @brief Retrieve the path of the profile staged for the next reset, if any.
  */
 std::string Simulator::getPendingParamProfilePath() const {
-    std::lock_guard<std::mutex> lock(m_profileMutex);
+    std::lock_guard<std::mutex> lock(m_profile_mutex);
     return m_pendingProfilePath;
 }
 
@@ -614,18 +615,18 @@ bool Simulator::consumePendingParamSnapshot(std::vector<double>& out) {
 
     out.assign(desc->param_values, desc->param_values + desc->num_params);
 
-    std::shared_ptr<MetadataProfile> pendingProfileCopy;
+    std::shared_ptr<MetadataProfile> pending_profile_copy;
     {
-        std::lock_guard<std::mutex> profileLock(m_profileMutex);
-        pendingProfileCopy = m_pendingProfile;
+        std::lock_guard<std::mutex> profileLock(m_profile_mutex);
+        pending_profile_copy = m_pendingProfile;
     }
 
-    if (pendingProfileCopy && desc->param_names) {
+    if (pending_profile_copy && desc->param_names) {
         for (size_t i = 0; i < desc->num_params; ++i) {
             const char* name = desc->param_names[i];
             if (!name) continue;
-            auto it = pendingProfileCopy->paramOverrides.find(name);
-            if (it == pendingProfileCopy->paramOverrides.end()) continue;
+            auto it = pending_profile_copy->param_overrides.find(name);
+            if (it == pending_profile_copy->param_overrides.end()) continue;
             if (!it->second.defaultValue) continue;
             double fallbackMin = desc->param_min ? desc->param_min[i] : *(it->second.defaultValue);
             double fallbackMax = desc->param_max ? desc->param_max[i] : *(it->second.defaultValue);
@@ -650,7 +651,7 @@ bool Simulator::consumePendingParamSnapshot(std::vector<double>& out) {
  * @param out Destination vector resized to the number of settings.
  * @return True if a new snapshot was written, false if nothing changed.
  */
-bool Simulator::consumePendingSettingSnapshot(std::vector<int32_t>& out) {
+bool Simulator::consumePendingSettingSnapshot(std::vector<uint32_t>& out) {
     if (!m_pendingSettingsDirty.exchange(false, std::memory_order_relaxed)) {
         return false;
     }
@@ -666,34 +667,34 @@ bool Simulator::consumePendingSettingSnapshot(std::vector<int32_t>& out) {
 
     out.assign(desc->setting_values, desc->setting_values + desc->num_settings);
 
-    std::shared_ptr<MetadataProfile> pendingProfileCopy;
+    std::shared_ptr<MetadataProfile> pending_profile_copy;
     {
-        std::lock_guard<std::mutex> profileLock(m_profileMutex);
-        pendingProfileCopy = m_pendingProfile;
+        std::lock_guard<std::mutex> profileLock(m_profile_mutex);
+        pending_profile_copy = m_pendingProfile;
     }
 
-    if (pendingProfileCopy &&
+    if (pending_profile_copy &&
         desc->setting_names &&
         desc->setting_option_names &&
         desc->setting_option_setting_index) {
-        for (const auto& [settingName, optionLabel] : pendingProfileCopy->settingDefaults) {
-            int settingIndex = -1;
+        for (const auto& [setting_name, option_label] : pending_profile_copy->setting_defaults) {
+            size_t setting_index = common::kNullIndex;
             for (size_t i = 0; i < desc->num_settings; ++i) {
-                if (desc->setting_names[i] && settingName == desc->setting_names[i]) {
-                    settingIndex = static_cast<int>(i);
+                if (desc->setting_names[i] && setting_name == desc->setting_names[i]) {
+                    setting_index = i;
                     break;
                 }
             }
-            if (settingIndex < 0 || settingIndex >= static_cast<int>(out.size())) {
+            if (setting_index == common::kNullIndex || setting_index >= out.size()) {
                 continue;
             }
 
             int localOptionIndex = 0;
             int selectedLocal = -1;
             for (size_t opt = 0; opt < desc->num_setting_options; ++opt) {
-                if (desc->setting_option_setting_index[opt] != settingIndex) continue;
+                if (desc->setting_option_setting_index[opt] != setting_index) continue;
                 const char* optName = desc->setting_option_names[opt];
-                if (optName && optionLabel == optName) {
+                if (optName && option_label == optName) {
                     selectedLocal = localOptionIndex;
                     break;
                 }
@@ -701,7 +702,7 @@ bool Simulator::consumePendingSettingSnapshot(std::vector<int32_t>& out) {
             }
 
             if (selectedLocal >= 0) {
-                out[settingIndex] = selectedLocal;
+                out[setting_index] = selectedLocal;
             }
         }
     }
@@ -735,7 +736,7 @@ void Simulator::stageParamUpdate(size_t index, double value) {
     m_pendingParamsDirty.store(true, std::memory_order_relaxed);
 }
 
-void Simulator::stageSettingUpdate(size_t index, int32_t value) {
+void Simulator::stageSettingUpdate(size_t index, uint32_t value) {
     std::lock_guard<std::mutex> lock(m_paramMutex);
     m_pendingSettingUpdates.push_back({index, value});
     m_pendingSettingsDirty.store(true, std::memory_order_relaxed);
@@ -755,7 +756,7 @@ void Simulator::publishStateUpdate(const CarModelDescriptor* desc,
     header->set_tick(tick);
     header->set_sim_time(simTime);
     header->set_version(kProtocolVersion);
-    sceneMsg->set_metadata_version(m_metadataVersion.load(std::memory_order_relaxed));
+    sceneMsg->set_metadata_version(m_metadata_version.load(std::memory_order_relaxed));
 
     auto assignValues = [](const std::vector<double>& source,
                            const double* fallback,
@@ -824,7 +825,7 @@ lilsim::ModelMetadata Simulator::buildModelMetadata(const CarModelDescriptor* de
     header->set_sim_time(simTime);
 
     metadata.set_model_name(m_currentModelName);
-    uint64_t version = m_metadataVersion.fetch_add(1, std::memory_order_relaxed) + 1;
+    uint64_t version = m_metadata_version.fetch_add(1, std::memory_order_relaxed) + 1;
     metadata.set_schema_version(version);
 
     auto* params = metadata.mutable_params();
@@ -845,7 +846,7 @@ lilsim::ModelMetadata Simulator::buildModelMetadata(const CarModelDescriptor* de
         meta->set_default_index(desc->setting_values ? desc->setting_values[i] : 0);
         if (desc->setting_option_names && desc->setting_option_setting_index) {
             for (size_t opt = 0; opt < desc->num_setting_options; ++opt) {
-                if (desc->setting_option_setting_index[opt] == static_cast<int32_t>(i)) {
+                if (desc->setting_option_setting_index[opt] == i) {
                     meta->add_options(desc->setting_option_names[opt]
                                           ? desc->setting_option_names[opt]
                                           : "");
@@ -1055,7 +1056,7 @@ void Simulator::applyAsyncControl(const lilsim::ControlAsync& control,
     if (!desc) {
         return;
     }
-    if (control.metadata_version() != m_metadataVersion.load(std::memory_order_relaxed)) {
+    if (control.metadata_version() != m_metadata_version.load(std::memory_order_relaxed)) {
         spdlog::warn("[sim] Dropping async control (metadata version mismatch)");
         return;
     }
@@ -1068,7 +1069,7 @@ void Simulator::applyAsyncControl(const lilsim::ControlAsync& control,
     for (size_t i = 0; i < desc->num_inputs; ++i) {
         m_newInput[i] = control.input_values(static_cast<int>(i));
     }
-    m_inputUpdateRequested.store(true, std::memory_order_relaxed);
+    m_input_update_requested.store(true, std::memory_order_relaxed);
 }
 
 bool Simulator::requestSyncControl(const CarModelDescriptor* desc,
@@ -1084,7 +1085,7 @@ bool Simulator::requestSyncControl(const CarModelDescriptor* desc,
     header->set_version(kProtocolVersion);
 
     auto* sceneMsg = request.mutable_scene();
-    const uint64_t requestMetadataVersion = m_metadataVersion.load(std::memory_order_relaxed);
+    const uint64_t requestMetadataVersion = m_metadata_version.load(std::memory_order_relaxed);
     auto* sceneHeader = sceneMsg->mutable_header();
     sceneHeader->set_tick(tick);
     sceneHeader->set_sim_time(simTime);
@@ -1354,17 +1355,17 @@ void Simulator::applyProfileMetadata(const CarModelDescriptor* desc,
         }
     };
 
-    applyRange(profile.paramOverrides,
+    applyRange(profile.param_overrides,
                desc->param_min,
                desc->param_max,
                desc->num_params,
                desc->param_names);
-    applyRange(profile.inputOverrides,
+    applyRange(profile.input_overrides,
                desc->input_min,
                desc->input_max,
                desc->num_inputs,
                desc->input_names);
-    applyRange(profile.stateOverrides,
+    applyRange(profile.state_overrides,
                desc->state_min,
                desc->state_max,
                desc->num_states,
@@ -1377,11 +1378,11 @@ void Simulator::applyProfileMetadata(const CarModelDescriptor* desc,
 void Simulator::applyProfileRuntimeEffects(const CarModelDescriptor& desc,
                                            const MetadataProfile& profile,
                                            bool profileJustActivated) {
-    if (profileJustActivated && profile.declaredModel && !profile.declaredModel->empty() &&
-        !m_currentModelName.empty() && *profile.declaredModel != m_currentModelName) {
+    if (profileJustActivated && profile.declared_model && !profile.declared_model->empty() &&
+        !m_currentModelName.empty() && *profile.declared_model != m_currentModelName) {
         spdlog::warn("[sim] Profile '{}' targets model '{}' but current model is '{}'.",
                      profile.path,
-                     *profile.declaredModel,
+                     *profile.declared_model,
                      m_currentModelName);
     }
 
@@ -1413,16 +1414,16 @@ void Simulator::applyProfileRuntimeEffects(const CarModelDescriptor& desc,
         }
     };
 
-    logMissing("parameter", desc.num_params, desc.param_names, profile.paramOverrides);
-    logMissing("input", desc.num_inputs, desc.input_names, profile.inputOverrides);
-    logMissing("state", desc.num_states, desc.state_names, profile.stateOverrides);
+    logMissing("parameter", desc.num_params, desc.param_names, profile.param_overrides);
+    logMissing("input", desc.num_inputs, desc.input_names, profile.input_overrides);
+    logMissing("state", desc.num_states, desc.state_names, profile.state_overrides);
 
     if (profileJustActivated && desc.param_values && desc.param_names) {
         for (size_t i = 0; i < desc.num_params; ++i) {
             const char* raw = desc.param_names[i];
             if (!raw) continue;
-            auto it = profile.paramOverrides.find(raw);
-            if (it == profile.paramOverrides.end()) continue;
+            auto it = profile.param_overrides.find(raw);
+            if (it == profile.param_overrides.end()) continue;
             if (!it->second.defaultValue) continue;
             double fallbackMin = desc.param_min ? desc.param_min[i] : *(it->second.defaultValue);
             double fallbackMax = desc.param_max ? desc.param_max[i] : *(it->second.defaultValue);
@@ -1435,27 +1436,27 @@ void Simulator::applyProfileRuntimeEffects(const CarModelDescriptor& desc,
 
     if (profileJustActivated && desc.setting_values && desc.setting_names &&
         desc.setting_option_names && desc.setting_option_setting_index) {
-        for (const auto& [settingName, optionLabel] : profile.settingDefaults) {
-            int settingIndex = -1;
+        for (const auto& [setting_name, option_label] : profile.setting_defaults) {
+            int setting_index = -1;
             for (size_t i = 0; i < desc.num_settings; ++i) {
-                if (desc.setting_names[i] && settingName == desc.setting_names[i]) {
-                    settingIndex = static_cast<int>(i);
+                if (desc.setting_names[i] && setting_name == desc.setting_names[i]) {
+                    setting_index = static_cast<int>(i);
                     break;
                 }
             }
-            if (settingIndex < 0) {
+            if (setting_index < 0) {
                 spdlog::warn("[sim] Profile '{}' references unknown setting '{}'; ignoring.",
                              profile.path,
-                             settingName);
+                             setting_name);
                 continue;
             }
 
             int localOptionIndex = 0;
             int selectedLocal = -1;
             for (size_t opt = 0; opt < desc.num_setting_options; ++opt) {
-                if (desc.setting_option_setting_index[opt] != settingIndex) continue;
+                if (desc.setting_option_setting_index[opt] != setting_index) continue;
                 const char* optName = desc.setting_option_names[opt];
-                if (optName && optionLabel == optName) {
+                if (optName && option_label == optName) {
                     selectedLocal = localOptionIndex;
                     break;
                 }
@@ -1465,12 +1466,12 @@ void Simulator::applyProfileRuntimeEffects(const CarModelDescriptor& desc,
             if (selectedLocal < 0) {
                 spdlog::warn("[sim] Profile '{}' references unknown option '{}' for setting '{}'; ignoring.",
                              profile.path,
-                             optionLabel,
-                             settingName);
+                             option_label,
+                             setting_name);
                 continue;
             }
 
-            desc.setting_values[settingIndex] = selectedLocal;
+            desc.setting_values[setting_index] = selectedLocal;
         }
     }
 }
@@ -1512,7 +1513,7 @@ void Simulator::loop() {
          continue;
     }
 
-    if (m_startPoseUpdateRequested.exchange(false, std::memory_order_relaxed)) {
+    if (m_start_pose_update_requested.exchange(false, std::memory_order_relaxed)) {
       m_startPose = m_newStartPose;
     }
 
@@ -1527,7 +1528,7 @@ void Simulator::loop() {
       }
     }
     
-    if (m_inputUpdateRequested.exchange(false, std::memory_order_relaxed)) {
+    if (m_input_update_requested.exchange(false, std::memory_order_relaxed)) {
         std::lock_guard<std::mutex> inputLock(m_inputMutex);
         if (m_newInput.size() == desc->num_inputs) {
             for(size_t i=0; i<desc->num_inputs; ++i) {
@@ -1574,7 +1575,7 @@ void Simulator::loop() {
         bool profileJustActivated = false;
         bool profileCleared = false;
         {
-            std::lock_guard<std::mutex> profileLock(m_profileMutex);
+            std::lock_guard<std::mutex> profileLock(m_profile_mutex);
             if (m_pendingProfile) {
                 m_activeProfile = m_pendingProfile;
                 m_activeProfilePath = m_pendingProfilePath;
@@ -1643,7 +1644,7 @@ void Simulator::loop() {
         continue;
     }
     
-    if (m_conesUpdateRequested.exchange(false, std::memory_order_relaxed)) {
+    if (m_cones_update_requested.exchange(false, std::memory_order_relaxed)) {
         m_state.cones = m_newCones;
         m_db.publish(m_state);
     }
@@ -1655,9 +1656,9 @@ void Simulator::loop() {
       continue;
     }
 
-    uint64_t stepsRemaining = m_stepTarget.load(std::memory_order_relaxed);
+    uint64_t stepsRemaining = m_step_target.load(std::memory_order_relaxed);
     if (stepsRemaining > 0) {
-      m_stepTarget.fetch_sub(1, std::memory_order_relaxed);
+      m_step_target.fetch_sub(1, std::memory_order_relaxed);
       if (stepsRemaining == 1) {
         m_paused.store(true, std::memory_order_relaxed);
       }

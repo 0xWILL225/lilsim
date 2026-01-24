@@ -1,5 +1,5 @@
 #### MVP TODO
-- Generic car modeling over C ABI
+- Generic car modeling over C ABI [DONE]
 	- Parameters, inputs and states 
 		- wheelbase and track width obligatory parameters, defined even if model plugin author doesn't register them 
 		- Car pose (x, y, yaw), front_right_wheel_angle and front_left_wheel_angle obligatory states, model plugin invalid without them
@@ -9,7 +9,7 @@
 	- YAML config files for specific vehicles - overwrites max, min and default values
 		- One for each season's car - without needing to recompile the model
 		- Loaded in from GUI or by connected client
-- Car visuals updated
+- Car visuals updated [DONE]
     - 8 png's required
         - Chassis (drawn under wheels) (chassis.png)
             - Includes rear wheels visual, but not front wheels, only front suspension
@@ -43,7 +43,7 @@
                 - particularly important for placing the tires on the front axle and rotating them right
     - Front wheels actually turn based on state (wheel_fl_angle and wheel_fr_angle)
     - Just make red TSAL blink for now, no actual TS/AS states yet
-- ZeroMQ comms overhaul
+- ZeroMQ comms overhaul [DONE]
 	- Update ZeroMQ comms to match new car model system
 		- No more specific types for state, input and parameters
 		- Metadata message used to link names with indices, indices used for raw payload state and control messages
@@ -52,23 +52,31 @@
 		- Perhaps except the inputs (needs consideration)
 			- Mapping of inputs also needs to be set by settings in the GUI, since car models now don't have any obligatory input types
 	- Update Python SDK to match changes and update the example jupyter notebook
-- Fix so that the model parameter loader can read in "infinity" from yaml file
-- Add simulation run speed and dt parameters in Simulation Control tab 
-- Add car sprite marker
+- Fix so that the model parameter loader can read in "infinity" from yaml file [DONE]
+- Add simulation run speed and dt parameters in Simulation Control tab [DONE]
+- Add car sprite marker [DONE]
 	- Marker that renders like the car
 	- Defined by obligatory car state variables (though front wheel angles are optional) and opacity
 	- Optionally, a tint color and tint opacity can be specified to make it clearly separable from the actual car
 	- No TSAL or ASSI stuff required for car markers
-- GUI configuration cache file
+- GUI configuration cache file [DONE]
 	- Config file stores GUI state after ctrl+S is pressed
-		- Window size is stored
-		- Panel horizontal size and minimization state is stored
-		- Car model compiled dynamic library and parameter file paths are cached
-		- Read on every start up
-	- Top bar with "File" tab, where one can save and "save as..." the GUI config
+		- Just like RViz, window name has an asterisk after it when there are unsaved GUI changes
+		- Window pixel dimensions is stored (right now it's just hard-coded)
+		- Side panels' horizontal size and minimization state is stored
+		- Car model compiled dynamic library and parameter file absolute paths are cached
+		- Simulation parameters are stored (dt, control period, control delay)
+			- Except run speed which is reset to 1X every time
+			- Input Source and Control Mode also stored
+		- Car model parameters are not stored directly, they will be whatever the stored car model parameter file says, or the model defaults if no parameter file is given
+		- File is read at every start up of the sim
+	- Classic top bar with "File" tab, where one can "save" and "save as..." the GUI config
+		- "Ctrl+S" and "Ctrl+Shift+S" are shows as keyboard shortcuts there
 		- Can also set the absolute file path for what config file to use (ImGuiFileDialogue)
+	- Default GUI config file is stored where the executable is
+- Make project adhere to clang tidy and clang format rules you've set up [NEXT]
 - Proper installation
-	- Make nice icon png with rounded edges
+	- Make nice icon png with rounded edges [TEMP-DONE]
 	- Install script that installs the program properly and makes it launchable from start menu (from whatever menu opens when pressing the "Windows" key)
 		- Also makes it launchable from terminal as simple command
 - Make new project and new repo on Github with a better name for the simulator

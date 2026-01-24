@@ -131,10 +131,8 @@ if(ENABLE_CLANG_TIDY)
       
       list(APPEND CLANG_TIDY_EXTRA_ARGS "--extra-arg-before=--driver-mode=g++")
     else()
-      # When using clang, tell clang-tidy to use libc++ if that's what we're using
-      if(CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
-        list(APPEND CLANG_TIDY_EXTRA_ARGS "--extra-arg=-stdlib=libc++")
-      endif()
+      # When using clang, use libc++ (configured in CMakePresets.json)
+      list(APPEND CLANG_TIDY_EXTRA_ARGS "--extra-arg=-stdlib=libc++")
     endif()
     
     set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}" ${CLANG_TIDY_EXTRA_ARGS})

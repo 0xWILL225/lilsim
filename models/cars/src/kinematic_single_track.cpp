@@ -196,7 +196,7 @@ struct CarModel {
 
   // Value storage (sizes from macros/metadata)
   std::array<double,  P_COUNT> param_values{};
-  std::array<int32_t, S_COUNT> setting_values{};
+  std::array<uint32_t, S_COUNT> setting_values{};
   std::array<double,  I_COUNT> input_values{};
   std::array<double,  ST_COUNT> state_values{};
 
@@ -217,7 +217,7 @@ struct CarModel {
     static_assert(S_COUNT > 0, "This model requires at least 1 setting.");
     static_assert(S_steering_input_mode < S_COUNT, "Missing setting: steering_input_mode.");
     // We know we defined steering_input_mode as the only setting
-    int32_t mode = setting_values[S_steering_input_mode];
+    uint32_t mode = setting_values[S_steering_input_mode];
     return (mode == 1); // 0: "angle", 1: "rate"
   }
 
@@ -380,11 +380,11 @@ void car_model_step(CarModel* model, double dt) {
   double y     = model->y;
   double yaw   = model->yaw;
   double v     = model->v;
-  double L     = model->param_values[P_wheelbase];
+  double wheelbase     = model->param_values[P_wheelbase];
 
   double dx    = v * std::cos(yaw);
   double dy    = v * std::sin(yaw);
-  double dyaw  = (L > 0.0) ? (v / L) * std::tan(front_wheel_angle) : 0.0;
+  double dyaw  = (wheelbase > 0.0) ? (v / wheelbase) * std::tan(front_wheel_angle) : 0.0;
   double dv    = ax;
 
   x   += dt * dx;

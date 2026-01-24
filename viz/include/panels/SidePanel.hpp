@@ -37,20 +37,19 @@ class SidePanel {
 public:
   enum class Side { Left, Right };
 
-  SidePanel(const std::string& name, Side side, float defaultWidth = 300.0f)
+  SidePanel(const std::string& name, Side side, float default_width = 300.0f)
     : m_name(name)
     , m_side(side)
-    , m_width(defaultWidth)
-    , m_defaultWidth(defaultWidth) {
+    , m_width(default_width){
   }
 
   /**
    * @brief Draws the panel and all its sections.
    *
-   * @param windowWidth Total window width in pixels
-   * @param windowHeight Total window height in pixels
+   * @param window_width Total window width in pixels
+   * @param window_height Total window height in pixels
    */
-  void draw(int windowWidth, int windowHeight);
+  void draw(float window_width, float window_height);
 
   /**
    * @brief Adds a collapsible section to the panel.
@@ -71,9 +70,19 @@ public:
     return m_collapsed ? m_collapsedWidth : m_width;
   }
 
+  float getContentWidth() const {
+    return m_width;
+  }
+
   bool isCollapsed() const {
     return m_collapsed;
   }
+
+  void setContentWidth(float width);
+
+  void setCollapsed(bool collapsed);
+
+  void setTopMargin(float margin);
 
   /**
    * @brief Returns true if the mouse is currently hovering over this panel.
@@ -86,10 +95,10 @@ private:
   std::string m_name;
   Side m_side;
   float m_width;
-  float m_defaultWidth;
   bool m_collapsed = false;
   bool m_resizing = false;
   bool m_isHovered = false;
+  float m_top_margin = 0.0f;
   const float m_collapsedWidth = 30.0f;
   const float m_minWidth = 150.0f;
   const float m_maxWidth = 600.0f;

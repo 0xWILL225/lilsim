@@ -59,7 +59,7 @@ message SceneState {
   repeated double state_values = 3;
   repeated double input_values = 4;
   repeated double param_values = 5;
-  repeated int32 setting_values = 6;
+  repeated uint32 setting_values = 6;
 }
 
 message StateUpdate {
@@ -111,17 +111,17 @@ message IndexedDouble {
   double value = 2;
 }
 
-message IndexedInt32 {
+message IndexedUInt32 {
   uint32 index = 1;
-  int32 value = 2;
+  uint32 value = 2;
 }
 
 message AdminCommand {
   Header           header     = 1;
   AdminCommandType type       = 2;
   uint64           step_count = 3;  // for STEP
-  repeated IndexedDouble param_updates = 4;   // for SET_PARAMS/INIT
-  repeated IndexedInt32  setting_updates = 5; // for SET_SETTINGS/INIT
+  repeated IndexedDouble  param_updates = 4;   // for SET_PARAMS/INIT
+  repeated IndexedUInt32  setting_updates = 5; // for SET_SETTINGS/INIT
   bool             sync_mode  = 6;  // for SET_CONTROL_MODE
   uint32           control_period_ms = 7; // milliseconds between control requests (sync mode)
   string           track_path = 8;  // for SET_TRACK

@@ -47,11 +47,11 @@ struct ParamOverride : RangeOverride {
 /** @brief Parsed metadata profile describing per-model overrides. */
 struct MetadataProfile {
   std::string path;
-  std::optional<std::string> declaredModel;
-  std::unordered_map<std::string, ParamOverride> paramOverrides;
-  std::unordered_map<std::string, RangeOverride> inputOverrides;
-  std::unordered_map<std::string, RangeOverride> stateOverrides;
-  std::unordered_map<std::string, std::string> settingDefaults;
+  std::optional<std::string> declared_model;
+  std::unordered_map<std::string, ParamOverride> param_overrides;
+  std::unordered_map<std::string, RangeOverride> input_overrides;
+  std::unordered_map<std::string, RangeOverride> state_overrides;
+  std::unordered_map<std::string, std::string> setting_defaults;
 };
 
 class Simulator {
@@ -63,7 +63,7 @@ public:
   void stop();
   
   void setInput(const std::vector<double>& u) {
-    m_inputUpdateRequested.store(true, std::memory_order_relaxed);
+    m_input_update_requested.store(true, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(m_inputMutex);
     m_newInput = u;
   }
@@ -78,7 +78,7 @@ public:
     return m_paused.load(std::memory_order_relaxed);
   }
   void step(uint64_t numTicks) {
-    m_stepTarget.store(numTicks, std::memory_order_relaxed);
+    m_step_target.store(numTicks, std::memory_order_relaxed);
     if (numTicks > 0) {
       m_paused.store(false, std::memory_order_relaxed);
     }
@@ -97,7 +97,7 @@ public:
   double getRequestedControlDelayMilliseconds() const;
   
   uint64_t getTicksRemaining() const {
-    return m_stepTarget.load(std::memory_order_relaxed);
+    return m_step_target.load(std::memory_order_relaxed);
   }
   
   void reset() {
@@ -105,12 +105,12 @@ public:
   }
 
   void setCones(const std::vector<scene::Cone>& cones) {
-    m_conesUpdateRequested.store(true, std::memory_order_relaxed);
+    m_cones_update_requested.store(true, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(m_dataMutex);
     m_newCones = cones;
   }
   void setStartPose(const common::SE2& pose) {
-    m_startPoseUpdateRequested.store(true, std::memory_order_relaxed);
+    m_start_pose_update_requested.store(true, std::memory_order_relaxed);
     m_newStartPose = pose;
   }
 
@@ -130,7 +130,7 @@ public:
 
   // Parameter updates
   void setParam(size_t index, double value);
-  void setSetting(size_t index, int32_t value);
+  void setSetting(size_t index, uint32_t value);
 
   // Parameter profile (YAML) management
   void setParamProfileFile(const std::string& path);
@@ -138,7 +138,7 @@ public:
   std::string getActiveParamProfilePath() const;
   std::string getPendingParamProfilePath() const;
   bool consumePendingParamSnapshot(std::vector<double>& out);
-  bool consumePendingSettingSnapshot(std::vector<int32_t>& out);
+  bool consumePendingSettingSnapshot(std::vector<uint32_t>& out);
   
   bool checkAndClearModelChanged() {
     return m_modelChanged.exchange(false, std::memory_order_relaxed);
@@ -161,7 +161,7 @@ public:
   bool isSyncClientConnected() const;
   std::shared_ptr<zmq::context_t> getCommContext() const;
   uint64_t getMetadataVersion() const {
-    return m_metadataVersion.load(std::memory_order_relaxed);
+    return m_metadata_version.load(std::memory_order_relaxed);
   }
   
 private:
@@ -189,7 +189,7 @@ private:
                           lilsim::AdminReply& reply,
                           double dt);
   void stageParamUpdate(size_t index, double value);
-  void stageSettingUpdate(size_t index, int32_t value);
+  void stageSettingUpdate(size_t index, uint32_t value);
   void applyAsyncControl(const lilsim::ControlAsync& control,
                          const CarModelDescriptor* desc);
   bool requestSyncControl(const CarModelDescriptor* desc,
@@ -213,11 +213,11 @@ private:
   std::atomic<bool> m_running{false};
   std::atomic<bool> m_paused{false};
   std::atomic<bool> m_resetRequested{false};
-  std::atomic<bool> m_conesUpdateRequested{false};
-  std::atomic<bool> m_startPoseUpdateRequested{false};
-  std::atomic<bool> m_inputUpdateRequested{false};
+  std::atomic<bool> m_cones_update_requested{false};
+  std::atomic<bool> m_start_pose_update_requested{false};
+  std::atomic<bool> m_input_update_requested{false};
   
-  std::atomic<uint64_t> m_stepTarget{0}; 
+  std::atomic<uint64_t> m_step_target{0}; 
   std::thread m_thread;
   scene::Scene m_state;
   
@@ -244,13 +244,13 @@ private:
   std::vector<double> m_stateMaxBase;
   
   struct PendingParamUpdate { size_t index; double value; };
-  struct PendingSettingUpdate { size_t index; int32_t value; };
+  struct PendingSettingUpdate { size_t index; uint32_t value; };
   
   std::mutex m_paramMutex; 
   std::vector<PendingParamUpdate> m_pendingParamUpdates;
   std::vector<PendingSettingUpdate> m_pendingSettingUpdates;
 
-  mutable std::mutex m_profileMutex;
+  mutable std::mutex m_profile_mutex;
   std::shared_ptr<MetadataProfile> m_activeProfile;
   std::shared_ptr<MetadataProfile> m_pendingProfile;
   std::string m_activeProfilePath;
@@ -288,7 +288,7 @@ private:
     std::chrono::steady_clock::time_point timeoutDeadline;
   };
   std::deque<PendingSyncRequest> m_pendingSyncRequests;
-  std::atomic<uint64_t> m_metadataVersion{0};
+  std::atomic<uint64_t> m_metadata_version{0};
   mutable std::mutex m_metadataMutex;
   lilsim::ModelMetadata m_cachedMetadata;
   bool m_metadataDirty{true};

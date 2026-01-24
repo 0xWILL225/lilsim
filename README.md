@@ -6,8 +6,16 @@ A simple 2D simulator for Formula Student Driverless.
 ### Prerequisites
 - CMake 3.20+
 - C++20 compiler (clang/gcc/msvc)
-- vcpkg dependencies (automatically handled): `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`
+- vcpkg dependencies (automatically handled): `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`, `yaml-cpp`
 - wgpu-native (automatically downloaded on first build)
+
+### Enforcing the use of clang/libc++
+Clang uses `libc++` instead of `libstdc++`. To link all the `vcpkg` dependencies 
+without issues, some of which may by default have been compiled using `libstdc++`, 
+I needed to re-compile these with `libc++` instead. This necessitated the
+contents of `/home/will/code/lilsim/triplets/x64-linux-clang.cmake` and 
+`/home/will/code/lilsim/toolchains/clang-libc++.cmake` and their references in
+`/home/will/code/lilsim/CMakePresets.json`.
 
 ### Build & Run
 ```bash
@@ -19,7 +27,7 @@ cmake --build --preset build-debug -j
 ### Controls
 - **WASD**: Drive the car (W=forward, S=brake, A=steer left, D=steer right)
 - **Mouse scroll**: Zoom in/out
-- **Close window**: Exit
+- **Tab**: Change camera mode
 
 ---
 

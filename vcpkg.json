@@ -11,7 +11,8 @@
       "spdlog",
       "protobuf",
       "zeromq",
-      "cppzmq"
+      "cppzmq",
+      "yaml-cpp"
     ]
   }
   

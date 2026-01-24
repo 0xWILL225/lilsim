@@ -104,5 +104,13 @@ void MarkerSystem::setMarkerVisible(const std::string& ns, int id,
   }
 }
 
+void MarkerSystem::applyNamespaceVisibilitySnapshot(const std::map<std::string, bool>& snapshot) {
+  m_namespaceVisibility = snapshot;
+}
+
+std::map<std::string, bool> MarkerSystem::snapshotNamespaceVisibility() const {
+  return m_namespaceVisibility;
+}
+
 } // namespace viz
 

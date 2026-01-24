@@ -1,0 +1,27 @@
+window:
+  width: 1400
+  height: 800
+panels:
+  left:
+    width: 300.0
+    collapsed: false
+  right:
+    width: 300.0
+    collapsed: false
+paths:
+  model: ""
+  param_profile: ""
+  track_directory: ""
+  track_file: ""
+simulation:
+  timestep_ms: 1.0
+  control_period_ms: 10.0
+  control_delay_ms: 2.0
+  input_source: gui
+  control_mode: asynchronous
+visibility:
+  show_car: true
+  show_cones: true
+markers:
+  namespaces: {}
+
