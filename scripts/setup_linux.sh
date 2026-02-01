@@ -4,7 +4,7 @@ set -euo pipefail
 echo "[lilsim] Installing build prerequisites (requires sudo for apt)..."
 sudo apt update
 sudo apt install -y \
-  cmake ninja-build build-essential clang lld libc++-dev libc++abi-dev \
+  cmake ninja-build build-essential clang lld libstdc++-12-dev \
   pkg-config ccache unzip curl git
 
 VCPKG_DIR="${HOME}/.local/vcpkg"

@@ -28,7 +28,7 @@ IncludeCategories:
 - Regex: '^"'
   Priority: 200
 # Third-party library headers (angle brackets with paths)
-- Regex: '^<(GLFW|webgpu|imgui|spdlog|zmq|yaml-cpp|google)/'
+- Regex: '^<(GLFW|webgpu|imgui|spdlog|zmq|yaml-cpp)/'
   Priority: 300
 - Regex: '^<.*/.*>'
   Priority: 400
