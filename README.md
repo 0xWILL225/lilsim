@@ -5,12 +5,6 @@ A simple 2D simulator for Formula Student Driverless.
 
 ## Quick Start
 
-### Prerequisites
-- CMake 3.20+
-- C++20 compiler (clang/gcc/msvc)
-- vcpkg dependencies (automatically handled): `glfw3`, `imgui`, `eigen3`, `spdlog`, `protobuf`, `zeromq`, `cppzmq`, `yaml-cpp`
-- wgpu-native (automatically downloaded on first build)
-
 ### Build & Run
 ```bash
 cmake --preset debug
@@ -19,146 +13,31 @@ cmake --build --preset build-debug -j
 ```
 
 ### Controls
-- **WASD**: Drive the car (W=forward, S=brake, A=steer left, D=steer right)
+- **WASD**: Drive the car (W=forward, S=brake, A=steer left, D=steer right). Only active when Input Source is set to "GUI".
 - **Mouse scroll**: Zoom in/out
 - **Tab**: Change camera mode
 
----
+### Python Notebook algorithm development
 
-# Driverless Algorithm Prototyping Simulator — Concept Overview
-
-## Purpose
-
-A **simple, modular 2D simulator** for rapid prototyping of algorithms for **state estimation (localization/SLAM), path planning, and control** in Formula Student Driverless.  
-The focus is on **determinism**, **debuggability**, and **ease of use** from a **Jupyter notebook**, enabling step-by-step algorithm development and visualization.
+See contents of `python_sdk/testing.ipynb` for example usage of the Python SDK.
+It contains a simple example with a pure pursuit controller. 
 
 ---
 
-## Core Modules
+# A Driverless Algorithm Prototyping Simulator
 
-### 1. Scene Module
+This simulator with working name **lilsim** aims to be an all-in-one tool for simulation and visualization for the purpose of developing algorithms for state estimation, planning and control --- specifically in the context of **Formula Student Driverless**, i.e., autonomous car racing where tracks are delineated by traffic cones.
 
-- The **single source of truth** for the simulation state.
-- Stores:
-    - Car state
-    - Cone positions
-    - Sensors
-- **Access pattern:**
-    - Simulator module owns the write access.
-    - Other modules (Visualization, external clients) have read-only access.
-#### Implementation
+## Notable Features
 
-- **Double-buffered design:**  
-    Two `Scene` buffers: one active (“front”) and one being written (“back”).  
-    Simulator writes to back, then atomically swaps pointers.  
-    Readers always access the stable “front” snapshot.
-    
-- **Result:** lock-free access; suitable for 1 kHz simulation and 60 Hz visualization.
+Some features sets lilsim apart from other simulation environments.  
 
----
+**Vehicle model plugin system:** Allows users to write C++ plug-ins to define custom vehicle models. No limitations in how cars can be modeled. 
 
-### 2. Simulator Module
+**Synchronous-control simulation:** (When in synchronous control mode) Simulator requests control input from user's process that runs the control algorithm, and doesn't proceed stepping until input is received. Results of simulation are thereby decoupled from vehicle model/algorithm computational efficiency.
 
-- Runs at a **fixed timestep (`dt`)** and updates the Scene.
-- Responsible for physics integration (stepping vehicle model, noise models, sensors).
-- Owns the Scene during simulation.
-- Supports two operating modes:
+**Portability:** The front-end GUI is built on a stack of GLFW, WebGPU and Dear ImGui, which supports compulation and execution on Linux, Windows and MacOS.
 
-#### a. Synchronous Mode
+**User friendly:** Using the ROS 2 ecosystem or simulation (Gazebo + RViz) often ends up with four terminals and just as many GUIs open, with sometimes complex interdependency of processes. lilsim aims to restrict usage to one process for simulation and/or visualization (lilsim) and one for execution of algorithms (jupyter notebook, ROS 2 node, or other C++/Python program).
 
-- Simulator pauses every `K` ticks (control period) and requests control input from the client:
-    - Sends `ControlRequest{tick, deadline, state}`.
-    - Waits for `Control{tick, u}` or applies timeout policy (hold/brake/default).
-- Deterministic and ideal for Jupyter step-through operation.
-
-#### b. Asynchronous Mode
-
-- Client sends controls freely (`Control{target_tick, u}`).
-- Simulator uses the **latest control** whose timestamp ≤ current tick (sample-and-hold).
-- No waiting; continuous loop execution.
-
-#### Common
-
-- Every message carries `tick` and `sim_time`.
-- Fixed `dt` + seeded RNG → deterministic replay.
-- `ControlAck{tick}` messages confirm simulator progress.
-
----
-### 3. Visualization Module (GUI)
-
-- Renders the current Scene state and user-defined markers.
-- Runs at 60 FPS, reading the “front” Scene buffer.
-- Independent rendering thread.
-
-#### Rendering Stack
-
-- **Dear ImGui + wgpu-native
-    - Portable (Metal/D3D12/Vulkan via WebGPU backend)
-    - No Rust required
-    - Future-proof toward WebGPU
-    - Uses `imgui_impl_wgpu` backend (officially supported)
-- Uses GLFW for windowing and surface creation.
-
----
-## Marker System
-
-### Option 1: RViz-like (chosen for v1)
-
-- Simple flat registry `(namespace, id)`.
-- Primitive types: points, lines, meshes, text, transforms, etc.
-- Each marker has color, scale, and optional **TTL (time-to-live)**.
-- Visibility toggles per namespace.
-
-### Option 2 (future): Hierarchical / OpenUSD-inspired
-
-- Scene graph with primitives, transforms, and composition.
-- Deferred until core simulator is stable.
----
-## Communication Model
-
-### Internal (in-process)
-- **Simulator ↔ Scene:** Direct shared memory (pointers + atomics).
-- **Simulator ↔ Visualization:** Scene double-buffer read-only access.
-### External (to Python/Jupyter)
-- **Transport:** **ZeroMQ + Protobuf
-    - PUB/SUB for state updates and control requests.
-    - PUSH/PULL or REQ/REP for controls and admin commands.
-- Lightweight, fast, and notebook-friendly.
----
-## Jupyter Notebook Integration
-
-- Python SDK provides:
-    - Connection setup and message handling via `pyzmq`.
-    - Callback registration:
-        - `on_state(state)`
-        - `on_control_request(req)`
-    - Helper functions like `step(n)` (blocks until `tick += n`).
-        
-- Typical workflow:
-    1. User defines car and track parameters.
-    2. Sends initialization message to simulator.
-    3. Registers callbacks for control and perception.
-    4. Runs cell to start communication.
-    5. Uses visualization window to start/step simulation.
-    
-- Notebook remains **“locked”** during execution (one running cell).  
-    Simplicity and safety preferred over background interactivity.
----
-## Key Features
-
-- Deterministic simulation (record/replay ready)
-- Step-through debugging and visualization
-- Minimal dependencies, modular design
-- High-frequency simulation (~1 kHz) with decoupled rendering (60 Hz)
-- Immediate visual feedback and marker overlays
-- Extensible and flexible: car models, noise models, sensors models
-
----
-## TL;DR
-
-A **modular, deterministic C++ simulator** built for **rapid Driverless algorithm prototyping**.
-- Core: Scene (truth), Simulator (physics/control), Visualization (rendering).
-- Fast in-process data sharing, external Python interface via ZeroMQ.
-- Step-through control loop and RViz-style visualization, with future-ready WebGPU rendering.
-
----
+**Specific to FSD:** lilsim aims to simulate specifically the range of scenarios seen at Formula Student Driverless (FSD) competitions. This alleviates the burden of having to describe the FSD environment in more general simulation frameworks. 
