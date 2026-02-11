@@ -95,7 +95,7 @@ Checks: >
 # TODO: Later, turn all the warnings from the checks above into errors. ("*")
 WarningsAsErrors: ''
 
-# Only check headers from project source directories (not third_party)
+# only check headers from project source directories (not third_party)
 HeaderFilterRegex: "^(app|comm|common|models|scene|sim|viz)/.*\\.(h|hpp)$"
 
 CheckOptions:

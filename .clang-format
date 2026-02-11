@@ -15,7 +15,7 @@ PointerAlignment: Left
 # "const west" alignment of cv-qualifiers. In this project we use "const west".
 QualifierAlignment: Left
 
-# Include ordering for lilsim project
+# Include ordering
 IncludeBlocks: Regroup
 IncludeCategories:
 # Main header for .cpp file (e.g., "viz.hpp" for viz.cpp) - sorted first

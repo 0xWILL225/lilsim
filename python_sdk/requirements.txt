@@ -1,5 +1,5 @@
 pyzmq>=25.0.0
-protobuf>=4.21.0
+protobuf>=3.19.0,<3.21.0
 numpy>=1.24.0
 jupyter>=1.0.0
 matplotlib>=3.7.0

@@ -1,53 +1,49 @@
 {
-    "version": 4,
-    "configurePresets": [
-      {
-        "name": "base",
-        "generator": "Ninja",
-        "binaryDir": "build/${presetName}",
-        "cacheVariables": {
-          "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-          "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-          "CMAKE_C_COMPILER": "clang",
-          "CMAKE_CXX_COMPILER": "clang++",
-          "ENABLE_CLANG_TIDY": "ON",
-          "ENABLE_SANITIZERS": "OFF"
-        }
-      },
-      {
-        "name": "linux-vcpkg",
-        "inherits": "base",
-        "cacheVariables": {
-          "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        }
-      },
-      {
-        "name": "debug-gcc",
-        "inherits": "linux-vcpkg",
-        "cacheVariables": {
-          "CMAKE_BUILD_TYPE": "Debug",
-          "CMAKE_C_COMPILER": "gcc",
-          "CMAKE_CXX_COMPILER": "g++",
-          "ENABLE_CLANG_TIDY": "OFF"
-        }
-      },
-      {
-        "name": "debug",
-        "inherits": "linux-vcpkg",
-        "cacheVariables": {
-          "CMAKE_BUILD_TYPE": "Debug"
-        }
-      },
-      {
-        "name": "release",
-        "inherits": "linux-vcpkg",
-        "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
+  "version": 4,
+  "configurePresets": [
+    {
+      "name": "base",
+      "generator": "Ninja",
+      "binaryDir": "build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "ENABLE_CLANG_TIDY": "ON",
+        "ENABLE_SANITIZERS": "OFF"
       }
-    ],
-    "buildPresets": [
-      { "name": "build-debug", "configurePreset": "debug" },
-      { "name": "build-debug-gcc", "configurePreset": "debug-gcc" },
-      { "name": "build-release", "configurePreset": "release" }
-    ]
-  }
-  
+    },
+    {
+      "name": "linux-vcpkg",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      }
+    },
+    {
+      "name": "debug",
+      "inherits": "linux-vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "linux-vcpkg",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "build-debug",
+      "configurePreset": "debug"
+    },
+    {
+      "name": "build-release",
+      "configurePreset": "release"
+    }
+  ]
+}

@@ -253,8 +253,9 @@ class LilsimClient:
                         state_dict = self.decode_scene_state(control_request.scene)
                         control_output = self.sync_controller(control_request, state_dict)
                         vector = self._format_control_output(control_output)
-                    except Exception as exc:
-                        logger.error("Error in sync controller: %s", exc)
+                    except Exception:
+                        # log full traceback to help debug controller errors
+                        logger.exception("error in sync controller")
                         vector = None
 
                 if vector is None:
@@ -267,9 +268,10 @@ class LilsimClient:
                 reply.input_values.extend(vector)
                 self.control_dealer.send(reply.SerializeToString())
 
-            except Exception as e:
+            except Exception:
                 if self.running:
-                    logger.error(f"Error in control responder: {e}")
+                    # log full traceback for unexpected control responder failures
+                    logger.exception("error in control responder")
                     
         logger.info("Control responder thread stopped")
         
@@ -657,8 +659,8 @@ class LilsimClient:
         marker.ns = ns
         marker.id = id
         marker.type = messages_pb2.CIRCLE
-        marker.pose.x = pos[0]
-        marker.pose.y = pos[1]
+        marker.pose.x = float(pos[0])
+        marker.pose.y = float(pos[1])
         marker.pose.yaw = 0.0
         marker.scale.x = radius * 2
         marker.scale.y = radius * 2

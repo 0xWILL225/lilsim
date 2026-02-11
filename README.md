@@ -1,6 +1,8 @@
 # lilsim
 A simple 2D simulator for Formula Student Driverless.
 
+<img src="gifs/lilsim_demo.gif" width="1000" height="562" title="pure-pursuit-demo"> 
+
 ## Quick Start
 
 ### Prerequisites
