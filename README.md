@@ -3,13 +3,15 @@ A simple 2D simulator for Formula Student Driverless.
 
 <img src="gifs/lilsim_demo.gif" width="1000" height="562" title="pure-pursuit-demo"> 
 
+The GIF above shows a demo in which a Jupyter notebook session (`python_sdk/testing.ipynb`) connects to the simulator, registers a callback for returning control commands to the simulator, and sends marker messages to visualize the state of the Pure Pursuit controller running in the notebook process.
+
 ## Quick Start
 
 ### Build & Run
 ```bash
 cmake --preset debug
 cmake --build --preset build-debug -j
-./run_debug.sh
+./build/debug/app/lilsim
 ```
 
 ### Controls
